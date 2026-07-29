@@ -766,6 +766,22 @@
 
         <section id="tab-library" class="card hidden">
           <div id="maintenanceBox" style="margin:0 0 20px;padding:14px 16px;border:1px solid var(--line,#2a2a2a);border-radius:10px">
+            <h2 style="margin:0 0 6px;font-size:16px">Keep catalogs in sync</h2>
+            <p class="muted" style="margin:0 0 10px">
+              <strong>Always delete from this Mac admin</strong> (Library → Delete series / Delete movie).
+              That removes Mac + R2 + the phone catalog (GCE) together.
+            </p>
+            <p class="muted" style="margin:0 0 12px">
+              If you delete on GCE instead, open Library here — refresh syncs from the phone catalog and drops local titles that were published but no longer exist online.
+              Local-only encodes (never uploaded) stay.
+            </p>
+            <p class="muted" style="margin:0 0 12px">
+              If the phone still shows something missing on Mac, use
+              <strong>Clean leftover phone titles</strong>.
+            </p>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+              <button type="button" class="btn-cdn" id="purgeCloudOrphansBtn">Clean leftover phone titles</button>
+            </div>
             <h2 style="margin:0 0 6px;font-size:16px">Disk cleanup</h2>
             <p class="muted" style="margin:0 0 12px">
               Clears leftover uploads on this machine (temp files / failed encodes). Does not delete the database or R2.
@@ -848,6 +864,7 @@
       let pollTimer = null;
       let jobsView = "progress";
       let capabilities = null;
+      let publishesToCloud = false;
       const UPLOAD_CONCURRENCY = 5;
 
       function token() {
@@ -1078,6 +1095,7 @@
         const title = $("roleBannerTitle");
         const body = $("roleBannerBody");
         const canEncode = Boolean(cap.canEncode);
+        publishesToCloud = Boolean(cap.publishesToCloud);
         $("tabBtnMovie").style.display = canEncode ? "" : "none";
         $("tabBtnEpisode").style.display = canEncode ? "" : "none";
         $("tab-movie").classList.toggle("encode-disabled", !canEncode);
@@ -2360,7 +2378,7 @@
             }
           </div>
           <div class="detail-danger">
-            <p class="hint">Delete series removes the show, every season, every episode, and all connected media.</p>
+            <p class="hint">Delete series from this Mac — clears Mac + R2 + phone catalog (GCE).</p>
             <button type="button" class="btn-danger-ghost" data-action="delete-show" data-id="${escapeHtml(
               s.id,
             )}" data-label="${escapeHtml(s.title)}">Delete series</button>
@@ -2520,36 +2538,49 @@
 
         libraryActionBusy = true;
         const busyCopy = {
-          "purge-movie": ["Removing video…", "Mac files + CDN"],
-          "delete-movie": ["Deleting movie…", "Mac, CDN, and cloud API"],
-          "purge-episode": ["Removing video…", "Mac files + CDN"],
-          "delete-season": ["Deleting season…", "Mac, CDN, and cloud API"],
-          "delete-show": ["Deleting series…", "Mac encodes, R2, and cloud API — please wait"],
+          "purge-movie": ["Removing video…", "Mac files + CDN + phone catalog"],
+          "delete-movie": ["Deleting movie…", "Mac, CDN, and phone catalog"],
+          "purge-episode": ["Removing video…", "Mac files + CDN + phone catalog"],
+          "delete-season": ["Deleting season…", "Mac, CDN, and phone catalog"],
+          "delete-show": ["Deleting series…", "Mac encodes, R2, and phone catalog — please wait"],
         };
         const busy = busyCopy[action];
         if (busy) showDetailBusy(busy[0], busy[1]);
+
+        function warnIfCloudFailed(result) {
+          const cloud = result?.cloud;
+          if (cloud && cloud.attempted && cloud.ok === false) {
+            alert(
+              `Removed on Mac/R2, but the phone catalog (GCE) still has it:\n${cloud.message || "Cloud delete failed"}\n\nUse Library → Clean leftover phone titles.`,
+            );
+          }
+        }
+
         try {
           if (action === "purge-movie") {
-            await api(`/v1/admin/movies/${encodeURIComponent(id)}/media`, {
+            const result = await api(`/v1/admin/movies/${encodeURIComponent(id)}/media`, {
               method: "DELETE",
             });
+            warnIfCloudFailed(result);
             hideDetailBusy();
             await refreshLibrary();
             await openMovieDetail(id, label);
             return;
           }
           if (action === "delete-movie") {
-            await api(`/v1/admin/movies/${encodeURIComponent(id)}`, {
+            const result = await api(`/v1/admin/movies/${encodeURIComponent(id)}`, {
               method: "DELETE",
             });
+            warnIfCloudFailed(result);
             closeDetailModal();
             await refreshLibrary();
             return;
           }
           if (action === "purge-episode") {
-            await api(`/v1/admin/episodes/${encodeURIComponent(id)}/media`, {
+            const result = await api(`/v1/admin/episodes/${encodeURIComponent(id)}/media`, {
               method: "DELETE",
             });
+            warnIfCloudFailed(result);
             const showId = showDetailCache?.show?.id;
             const showTitle = showDetailCache?.show?.title || "Show";
             const keepSeason = activeSeasonIndex;
@@ -2575,6 +2606,7 @@
             const result = await api(`/v1/admin/seasons/${encodeURIComponent(id)}`, {
               method: "DELETE",
             });
+            warnIfCloudFailed(result);
             await refreshLibrary();
             await refreshShows();
             const showId = result.showId || showDetailCache?.show?.id;
@@ -2593,9 +2625,10 @@
             return;
           }
           if (action === "delete-show") {
-            await api(`/v1/admin/shows/${encodeURIComponent(id)}`, {
+            const result = await api(`/v1/admin/shows/${encodeURIComponent(id)}`, {
               method: "DELETE",
             });
+            warnIfCloudFailed(result);
             closeDetailModal();
             await refreshLibrary();
             await refreshShows();
@@ -2609,7 +2642,23 @@
       }
 
       async function refreshLibrary() {
-        const data = await api("/v1/admin/library");
+        const syncQ = publishesToCloud ? "?syncFromCloud=1" : "";
+        const data = await api(`/v1/admin/library${syncQ}`);
+        const sync = data.cloudSync;
+        if (sync) {
+          const removed =
+            (sync.removedShows || []).length + (sync.removedMovies || []).length;
+          if (removed > 0 || (sync.errors || []).length) {
+            const msg = $("cleanupMsg");
+            if (msg) {
+              msg.textContent =
+                removed > 0
+                  ? `Synced from phone catalog — removed ${removed} local title(s) that were deleted online.`
+                  : `Cloud sync warning: ${(sync.errors || []).join("; ")}`;
+              msg.className = (sync.errors || []).length ? "msg error" : "msg ok";
+            }
+          }
+        }
         $("moviesBody").innerHTML = data.movies
           .map(
             (m) => `<tr class="click-row" data-kind="movie" data-id="${escapeHtml(m.id)}" data-title="${escapeHtml(m.title)}">
@@ -2792,6 +2841,37 @@
       }
       $("cleanupTempBtn").addEventListener("click", () => void runCleanup(false));
       $("cleanupAllLocalBtn").addEventListener("click", () => void runCleanup(true));
+      $("purgeCloudOrphansBtn").addEventListener("click", async () => {
+        const msg = $("cleanupMsg");
+        if (
+          !window.confirm(
+            "Remove titles from the phone catalog (GCE) that are not on this Mac?\n\nTitles that still exist locally are left alone.",
+          )
+        ) {
+          return;
+        }
+        msg.textContent = "Cleaning leftover phone titles…";
+        msg.className = "msg";
+        try {
+          const data = await api("/v1/admin/maintenance/purge-cloud-orphans", {
+            method: "POST",
+          });
+          const showN = (data.deletedShows || []).length;
+          const movieN = (data.deletedMovies || []).length;
+          const errN = (data.errors || []).length;
+          msg.textContent =
+            `Removed ${showN} show(s) and ${movieN} movie(s) from the phone catalog` +
+            (errN ? ` · ${errN} error(s)` : "") +
+            `. Kept ${data.skippedShows || 0} show(s) / ${data.skippedMovies || 0} movie(s) that still exist on Mac.`;
+          msg.className = errN ? "msg error" : "msg ok";
+          if (errN) {
+            alert((data.errors || []).join("\n"));
+          }
+        } catch (error) {
+          msg.textContent = error.message || "Cloud orphan cleanup failed.";
+          msg.className = "msg error";
+        }
+      });
       $("detailCloseBtn").addEventListener("click", closeDetailModal);
       $("detailModal").addEventListener("click", (event) => {
         if (event.target === $("detailModal")) closeDetailModal();

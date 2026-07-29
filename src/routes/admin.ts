@@ -19,8 +19,10 @@ import {
   deleteSeason,
   deleteShow,
   LibraryNotFoundError,
+  purgeCloudOrphans,
   purgeEpisodeMedia,
   purgeMovieMedia,
+  syncLibraryFromCloud,
 } from "../lib/delete-library.js";
 import { addEpisode, parseSeasonEpisode } from "../lib/import-episode.js";
 import { addMovie } from "../lib/import-movie.js";
@@ -57,6 +59,12 @@ function rejectEncodeDisabled(config: { ALLOW_LOCAL_ENCODE: boolean }) {
     message:
       "Video encode is disabled on this API host (GCE). Use Mac admin at http://127.0.0.1:8787/admin/ with ALLOW_LOCAL_ENCODE=true — encode → R2 → register here. Or free disk: Library → Clean local media.",
   } as const;
+}
+
+function cascadeDeleteOptions(request: FastifyRequest) {
+  const raw = request.headers["x-shareflex-cascade-delete"];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return { skipCloudCascade: value === "1" || value === "true" };
 }
 
 const ALLOWED_EXT = new Set([
@@ -208,6 +216,29 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
   );
 
   app.post(
+    "/v1/admin/maintenance/purge-cloud-orphans",
+    { onRequest: [app.requireOwner] },
+    async (_request, reply) => {
+      if (!app.config.PUBLISH_TARGET_URL?.trim()) {
+        return reply.code(400).send({
+          error: "no_publish_target",
+          message:
+            "Set PUBLISH_TARGET_URL in Mac .env so this admin can reach the phone catalog (GCE).",
+        });
+      }
+      try {
+        const result = await purgeCloudOrphans(app.prisma, app.config);
+        return { ok: true, ...result };
+      } catch (error) {
+        return reply.code(502).send({
+          error: "cloud_orphan_purge_failed",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  );
+
+  app.post(
     "/v1/admin/library/register/movie",
     { onRequest: [app.requireOwner] },
     async (request, reply) => {
@@ -251,7 +282,34 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
     {
       onRequest: [app.requireOwner],
     },
-    async () => {
+    async (request) => {
+      const query = request.query as { syncFromCloud?: string };
+      const wantSync =
+        query.syncFromCloud === "1" ||
+        query.syncFromCloud === "true";
+
+      let sync: Awaited<ReturnType<typeof syncLibraryFromCloud>> | null = null;
+      if (wantSync && app.config.PUBLISH_TARGET_URL?.trim()) {
+        try {
+          sync = await syncLibraryFromCloud(
+            app.prisma,
+            app.mediaRoot,
+            app.config,
+          );
+        } catch (error) {
+          sync = {
+            removedShows: [],
+            removedMovies: [],
+            markedCloudShows: 0,
+            markedCloudMovies: 0,
+            clearedCloudFlags: 0,
+            errors: [
+              error instanceof Error ? error.message : String(error),
+            ],
+          };
+        }
+      }
+
       const [movies, shows] = await Promise.all([
         app.prisma.movie.findMany({ orderBy: { updatedAt: "desc" } }),
         app.prisma.show.findMany({
@@ -280,6 +338,18 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
           }),
         ),
         jobs: listJobs(20),
+        ...(sync
+          ? {
+              cloudSync: {
+                removedShows: sync.removedShows,
+                removedMovies: sync.removedMovies,
+                markedCloudShows: sync.markedCloudShows,
+                markedCloudMovies: sync.markedCloudMovies,
+                clearedCloudFlags: sync.clearedCloudFlags,
+                errors: sync.errors,
+              },
+            }
+          : {}),
       };
     },
   );
@@ -428,9 +498,16 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
-        const movie = await purgeMovieMedia(app.prisma, app.mediaRoot, id, app.config);
+        const { movie, cloud } = await purgeMovieMedia(
+          app.prisma,
+          app.mediaRoot,
+          id,
+          app.config,
+          cascadeDeleteOptions(request),
+        );
         return {
           ok: true,
+          cloud,
           movie: {
             ...serializeMovie(movie),
             cdnUploaded: movie.cdnUploaded,
@@ -454,7 +531,13 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
-        return await deleteMovie(app.prisma, app.mediaRoot, id, app.config);
+        return await deleteMovie(
+          app.prisma,
+          app.mediaRoot,
+          id,
+          app.config,
+          cascadeDeleteOptions(request),
+        );
       } catch (error) {
         if (error instanceof LibraryNotFoundError) {
           return reply.code(404).send({ error: "not_found", message: error.message });
@@ -470,9 +553,16 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
-        const episode = await purgeEpisodeMedia(app.prisma, app.mediaRoot, id, app.config);
+        const { episode, cloud } = await purgeEpisodeMedia(
+          app.prisma,
+          app.mediaRoot,
+          id,
+          app.config,
+          cascadeDeleteOptions(request),
+        );
         return {
           ok: true,
+          cloud,
           episode: {
             id: episode.id,
             episodeNumber: episode.episodeNumber,
@@ -499,7 +589,13 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
-        return await deleteSeason(app.prisma, app.mediaRoot, id, app.config);
+        return await deleteSeason(
+          app.prisma,
+          app.mediaRoot,
+          id,
+          app.config,
+          cascadeDeleteOptions(request),
+        );
       } catch (error) {
         if (error instanceof LibraryNotFoundError) {
           return reply.code(404).send({ error: "not_found", message: error.message });
@@ -515,7 +611,13 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
-        return await deleteShow(app.prisma, app.mediaRoot, id, app.config);
+        return await deleteShow(
+          app.prisma,
+          app.mediaRoot,
+          id,
+          app.config,
+          cascadeDeleteOptions(request),
+        );
       } catch (error) {
         if (error instanceof LibraryNotFoundError) {
           return reply.code(404).send({ error: "not_found", message: error.message });

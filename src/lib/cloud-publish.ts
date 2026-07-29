@@ -110,6 +110,7 @@ export async function registerEpisodeOnCloud(
 /**
  * Mirror a Mac library delete onto the GCE API DB (same ids).
  * Skips when PUBLISH_TARGET_URL is unset. 404 on cloud is treated as already gone.
+ * Sends X-ShareFlex-Cascade-Delete so the cloud host does not call back to Mac.
  */
 export async function deleteOnCloudApi(
   config: Env,
@@ -123,7 +124,10 @@ export async function deleteOnCloudApi(
     const base = config.PUBLISH_TARGET_URL.replace(/\/$/, "");
     const res = await fetch(`${base}${path}`, {
       method: "DELETE",
-      headers: { authorization: `Bearer ${token}` },
+      headers: {
+        authorization: `Bearer ${token}`,
+        "x-shareflex-cascade-delete": "1",
+      },
     });
     if (res.ok || res.status === 404) {
       return { attempted: true, ok: true };
@@ -141,6 +145,50 @@ export async function deleteOnCloudApi(
     console.warn(`Cloud delete ${path}:`, message);
     return { attempted: true, ok: false, message };
   }
+}
+
+/** List shows/movies on the phone catalog (GCE) for orphan cleanup. */
+export async function listCloudLibrary(config: Env): Promise<{
+  shows: Array<{ id: string; title: string; ready: boolean; episodeCount: number }>;
+  movies: Array<{ id: string; title: string; ready: boolean }>;
+}> {
+  if (!publishTargetConfigured(config)) {
+    return { shows: [], movies: [] };
+  }
+  const token = await loginToCloud(config);
+  const base = config.PUBLISH_TARGET_URL.replace(/\/$/, "");
+  const res = await fetch(`${base}/v1/admin/library`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    shows?: Array<{
+      id: string;
+      title: string;
+      ready?: boolean;
+      episodeCount?: number;
+    }>;
+    movies?: Array<{ id: string; title: string; ready?: boolean }>;
+    message?: string;
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new Error(
+      body.message || body.error || `Cloud library list failed (${res.status}).`,
+    );
+  }
+  return {
+    shows: (body.shows ?? []).map((s) => ({
+      id: s.id,
+      title: s.title,
+      ready: Boolean(s.ready),
+      episodeCount: s.episodeCount ?? 0,
+    })),
+    movies: (body.movies ?? []).map((m) => ({
+      id: m.id,
+      title: m.title,
+      ready: Boolean(m.ready),
+    })),
+  };
 }
 
 /**
