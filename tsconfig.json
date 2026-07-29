@@ -18,9 +18,9 @@
     "sourceMap": true,
     "isolatedModules": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "prisma/**/*.ts", "prisma.config.ts"],
   "exclude": ["dist", "generated", "node_modules", "src/**/*.test.ts"]
 }
