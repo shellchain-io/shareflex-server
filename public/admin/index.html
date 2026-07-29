@@ -496,8 +496,30 @@
       .episode-item .ep-file {
         color: var(--dim);
         font-size: 12px;
-        margin-bottom: 8px;
         word-break: break-all;
+        flex: 1;
+        min-width: 0;
+      }
+      .episode-item .ep-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+      .episode-item .ep-remove {
+        flex-shrink: 0;
+        background: transparent;
+        color: var(--danger);
+        border: 1px solid rgba(255,123,114,0.35);
+        border-radius: 8px;
+        padding: 5px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .episode-item .ep-remove:hover {
+        background: rgba(255,123,114,0.1);
       }
       .episode-item label {
         display: block;
@@ -754,7 +776,7 @@
             <div class="field grow">
               <label>Episode videos</label>
               <input id="episodeFiles" type="file" accept="video/*,.mkv,.mp4,.mov,.m4v" multiple />
-              <div class="file-hint">Add one or many videos for this season. Each gets a friendly name below (defaults to the file name — e.g. Pilot).</div>
+              <div class="file-hint">Add one or many videos for this season. Sorted by SxxExx ascending. Remove any file before upload.</div>
             </div>
           </div>
           <div id="episodeList" class="episode-list"></div>
@@ -945,6 +967,73 @@
           .trim() || name.replace(/\.[^.]+$/, "");
       }
 
+      /** Parse S01E08-style tags from a filename for sort + default episode #. */
+      function parseSeasonEpisodeFromName(name) {
+        const match = String(name || "").match(/[Ss](\d{1,2})[Ee](\d{1,3})/);
+        if (!match) return null;
+        return { season: Number(match[1]), episode: Number(match[2]) };
+      }
+
+      function syncEpisodeTitlesFromForm() {
+        const inputs = [...document.querySelectorAll(".episode-title-input")];
+        if (!inputs.length) return;
+        inputs.forEach((input) => {
+          const i = Number(input.dataset.index);
+          if (Number.isInteger(i) && i >= 0) {
+            episodeTitles[i] = input.value;
+          }
+        });
+      }
+
+      function syncEpisodeNumbersFromForm() {
+        const inputs = [...document.querySelectorAll(".episode-number-input")];
+        if (!inputs.length) return;
+        inputs.forEach((input) => {
+          const i = Number(input.dataset.index);
+          const value = Number(input.value);
+          if (Number.isInteger(i) && i >= 0 && Number.isInteger(value) && value > 0) {
+            episodeNumbers[i] = value;
+          }
+        });
+      }
+
+      /** Keep selection ordered by SxxExx ascending (then filename). */
+      function sortEpisodeSelection() {
+        const paired = episodeFiles.map((file, index) => ({
+          file,
+          title: episodeTitles[index] || titleFromFilename(file.name),
+          number: episodeNumbers[index],
+        }));
+        paired.sort((a, b) => {
+          const pa = parseSeasonEpisodeFromName(a.file.name);
+          const pb = parseSeasonEpisodeFromName(b.file.name);
+          if (pa && pb) {
+            if (pa.season !== pb.season) return pa.season - pb.season;
+            if (pa.episode !== pb.episode) return pa.episode - pb.episode;
+          } else if (pa && !pb) return -1;
+          else if (!pa && pb) return 1;
+          return a.file.name.localeCompare(b.file.name, undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+        });
+        episodeFiles = paired.map((p) => p.file);
+        episodeTitles = paired.map((p) => p.title);
+      }
+
+      function removeEpisodeAt(index) {
+        syncEpisodeTitlesFromForm();
+        syncEpisodeNumbersFromForm();
+        if (index < 0 || index >= episodeFiles.length) return;
+        episodeFiles.splice(index, 1);
+        episodeTitles.splice(index, 1);
+        episodeNumbers.splice(index, 1);
+        // Clear native input so the same files can be re-picked later.
+        if ($("episodeFiles")) $("episodeFiles").value = "";
+        assignDefaultEpisodeNumbers();
+        renderEpisodeList();
+      }
+
       function nextEpisodeStartNumber() {
         const seasonNumber = selectedSeasonNumber();
         if (!Number.isInteger(seasonNumber) || seasonNumber < 0) return 1;
@@ -969,8 +1058,21 @@
           return;
         }
         let next = nextEpisodeStartNumber();
-        episodeNumbers = episodeFiles.map(() => {
+        const used = new Set();
+        episodeNumbers = episodeFiles.map((file) => {
+          const parsed = parseSeasonEpisodeFromName(file.name);
+          if (
+            parsed &&
+            Number.isInteger(parsed.episode) &&
+            parsed.episode > 0 &&
+            !used.has(parsed.episode)
+          ) {
+            used.add(parsed.episode);
+            return parsed.episode;
+          }
+          while (used.has(next)) next += 1;
           const n = next;
+          used.add(n);
           next += 1;
           return n;
         });
@@ -990,7 +1092,10 @@
             const title = episodeTitles[index] || titleFromFilename(file.name);
             const code = `S${String(seasonLabel).padStart(2, "0")}E${String(num).padStart(2, "0")}`;
             return `<div class="episode-item">
-              <div class="ep-file">${escapeHtml(file.name)}</div>
+              <div class="ep-head">
+                <div class="ep-file">${escapeHtml(file.name)}</div>
+                <button type="button" class="ep-remove" data-remove-index="${index}">Remove</button>
+              </div>
               <div class="ep-fields">
                 <div class="ep-num">
                   <label>Episode #</label>
@@ -1032,6 +1137,11 @@
             if (codeEl && Number.isInteger(value) && value > 0) {
               codeEl.textContent = `In app: S${String(seasonLabel).padStart(2, "0")}E${String(value).padStart(2, "0")}`;
             }
+          });
+        });
+        list.querySelectorAll(".ep-remove").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            removeEpisodeAt(Number(btn.dataset.removeIndex));
           });
         });
       }
@@ -2693,8 +2803,18 @@
         }
       });
       $("episodeFiles").addEventListener("change", () => {
-        episodeFiles = [...($("episodeFiles").files || [])];
+        const picked = [...($("episodeFiles").files || [])];
+        // Merge newly picked files with any already kept after Remove.
+        const byKey = new Map();
+        for (const file of episodeFiles) {
+          byKey.set(`${file.name}:${file.size}:${file.lastModified}`, file);
+        }
+        for (const file of picked) {
+          byKey.set(`${file.name}:${file.size}:${file.lastModified}`, file);
+        }
+        episodeFiles = [...byKey.values()];
         episodeTitles = episodeFiles.map((file) => titleFromFilename(file.name));
+        sortEpisodeSelection();
         assignDefaultEpisodeNumbers();
         renderEpisodeList();
       });
