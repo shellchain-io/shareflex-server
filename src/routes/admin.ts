@@ -27,7 +27,7 @@ import {
 import { addEpisode, parseSeasonEpisode } from "../lib/import-episode.js";
 import { addMovie } from "../lib/import-movie.js";
 import { createId } from "../lib/ids.js";
-import { enqueueAdminJob, getJob, listJobs, cancelAdminJob, startUploadForJob } from "../lib/jobs.js";
+import { enqueueAdminJob, getJob, listJobs, cancelAdminJob, startUploadForJob, getJobConcurrency, setJobConcurrency } from "../lib/jobs.js";
 import { serializeMovie } from "../lib/movies.js";
 import { publishLocalPackageToR2 } from "../lib/publish-r2.js";
 import {
@@ -177,7 +177,52 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
           : app.config.ALLOW_LOCAL_ENCODE
             ? "local_encode"
             : "cloud_api",
+        jobConcurrency: getJobConcurrency(),
       };
+    },
+  );
+
+  app.get(
+    "/v1/admin/settings/job-concurrency",
+    { onRequest: [app.requireOwner] },
+    async () => getJobConcurrency(),
+  );
+
+  app.put(
+    "/v1/admin/settings/job-concurrency",
+    { onRequest: [app.requireOwner] },
+    async (request, reply) => {
+      const body = (request.body ?? {}) as {
+        encodeConcurrency?: number;
+        publishConcurrency?: number;
+      };
+      if (
+        body.encodeConcurrency !== undefined &&
+        (!Number.isFinite(body.encodeConcurrency) || body.encodeConcurrency < 1)
+      ) {
+        return reply.code(400).send({
+          error: "invalid_encode_concurrency",
+          message: "encodeConcurrency must be a positive integer.",
+        });
+      }
+      if (
+        body.publishConcurrency !== undefined &&
+        (!Number.isFinite(body.publishConcurrency) || body.publishConcurrency < 1)
+      ) {
+        return reply.code(400).send({
+          error: "invalid_publish_concurrency",
+          message: "publishConcurrency must be a positive integer.",
+        });
+      }
+      const next = setJobConcurrency({
+        ...(body.encodeConcurrency !== undefined
+          ? { encodeConcurrency: Number(body.encodeConcurrency) }
+          : {}),
+        ...(body.publishConcurrency !== undefined
+          ? { publishConcurrency: Number(body.publishConcurrency) }
+          : {}),
+      });
+      return { ok: true, ...getJobConcurrency(), applied: next };
     },
   );
 

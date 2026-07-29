@@ -831,7 +831,19 @@
 
         <section id="tab-jobs" class="card hidden">
           <h2>Jobs</h2>
-          <p class="muted" id="jobsHelp">Encode one at a time (next starts when encode finishes). CDN uploads are manual and run in parallel (up to 4). Cancel encode = delete; cancel upload = keep local and retry.</p>
+          <p class="muted" id="jobsHelp">Encode and CDN upload run in parallel (limits below). Cancel encode = delete; cancel upload = keep local and retry.</p>
+          <div class="row" style="margin:12px 0 4px;align-items:flex-end">
+            <div class="field sm">
+              <label for="encodeConcurrencyInput">Encode parallel</label>
+              <input id="encodeConcurrencyInput" type="number" min="1" max="20" value="10" />
+            </div>
+            <div class="field sm">
+              <label for="publishConcurrencyInput">CDN upload parallel</label>
+              <input id="publishConcurrencyInput" type="number" min="1" max="20" value="4" />
+            </div>
+            <button type="button" class="btn-cdn" id="saveJobConcurrencyBtn">Save</button>
+          </div>
+          <p class="file-hint" id="jobConcurrencyHint" style="margin:0 0 12px">Defaults: encode 10 · CDN 4. Saved in this browser and applied to the Mac encoder.</p>
           <div class="jobs-subtabs">
             <button type="button" class="jobs-subtab active" data-jobs-tab="progress" id="jobsTabProgress">In progress</button>
             <button type="button" class="jobs-subtab" data-jobs-tab="finished" id="jobsTabFinished">Finished</button>
@@ -873,6 +885,10 @@
       const TOKEN_KEY = "shareflex_admin_token";
       const REFRESH_KEY = "shareflex_admin_refresh";
       const USER_KEY = "shareflex_admin_user";
+      const ENCODE_CONCURRENCY_KEY = "shareflex_encode_concurrency";
+      const PUBLISH_CONCURRENCY_KEY = "shareflex_publish_concurrency";
+      const DEFAULT_ENCODE_CONCURRENCY = 10;
+      const DEFAULT_PUBLISH_CONCURRENCY = 4;
       const $ = (id) => document.getElementById(id);
 
       let showCatalog = [];
@@ -888,6 +904,97 @@
       let capabilities = null;
       let publishesToCloud = false;
       const UPLOAD_CONCURRENCY = 5;
+
+      function readStoredConcurrency(key, fallback) {
+        const raw = localStorage.getItem(key);
+        const n = Number(raw);
+        if (!Number.isFinite(n) || n < 1) return fallback;
+        return Math.min(20, Math.trunc(n));
+      }
+
+      function getPreferredJobConcurrency() {
+        return {
+          encodeConcurrency: readStoredConcurrency(
+            ENCODE_CONCURRENCY_KEY,
+            DEFAULT_ENCODE_CONCURRENCY,
+          ),
+          publishConcurrency: readStoredConcurrency(
+            PUBLISH_CONCURRENCY_KEY,
+            DEFAULT_PUBLISH_CONCURRENCY,
+          ),
+        };
+      }
+
+      function fillJobConcurrencyInputs(values) {
+        const encodeEl = $("encodeConcurrencyInput");
+        const publishEl = $("publishConcurrencyInput");
+        if (encodeEl) encodeEl.value = String(values.encodeConcurrency);
+        if (publishEl) publishEl.value = String(values.publishConcurrency);
+        const hint = $("jobConcurrencyHint");
+        if (hint) {
+          hint.textContent =
+            `Active: encode ${values.encodeConcurrency} · CDN ${values.publishConcurrency}. Stored in this browser; applied to Mac encoder.`;
+        }
+        const help = $("jobsHelp");
+        if (help && publishesToCloud) {
+          help.textContent =
+            `Encode up to ${values.encodeConcurrency} at once; CDN uploads up to ${values.publishConcurrency} in parallel. Cancel encode = delete; cancel upload = keep local and retry.`;
+        }
+      }
+
+      async function applyJobConcurrencyFromCache() {
+        const preferred = getPreferredJobConcurrency();
+        fillJobConcurrencyInputs(preferred);
+        try {
+          const data = await api("/v1/admin/settings/job-concurrency", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(preferred),
+          });
+          const applied = {
+            encodeConcurrency:
+              data?.applied?.encodeConcurrency ?? preferred.encodeConcurrency,
+            publishConcurrency:
+              data?.applied?.publishConcurrency ?? preferred.publishConcurrency,
+          };
+          localStorage.setItem(ENCODE_CONCURRENCY_KEY, String(applied.encodeConcurrency));
+          localStorage.setItem(PUBLISH_CONCURRENCY_KEY, String(applied.publishConcurrency));
+          fillJobConcurrencyInputs(applied);
+        } catch (error) {
+          console.warn("job concurrency", error);
+        }
+      }
+
+      async function saveJobConcurrencyFromInputs() {
+        const encodeRaw = Number($("encodeConcurrencyInput")?.value);
+        const publishRaw = Number($("publishConcurrencyInput")?.value);
+        const preferred = {
+          encodeConcurrency: Number.isFinite(encodeRaw) && encodeRaw >= 1
+            ? Math.min(20, Math.trunc(encodeRaw))
+            : DEFAULT_ENCODE_CONCURRENCY,
+          publishConcurrency: Number.isFinite(publishRaw) && publishRaw >= 1
+            ? Math.min(20, Math.trunc(publishRaw))
+            : DEFAULT_PUBLISH_CONCURRENCY,
+        };
+        localStorage.setItem(ENCODE_CONCURRENCY_KEY, String(preferred.encodeConcurrency));
+        localStorage.setItem(PUBLISH_CONCURRENCY_KEY, String(preferred.publishConcurrency));
+        fillJobConcurrencyInputs(preferred);
+        const data = await api("/v1/admin/settings/job-concurrency", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(preferred),
+        });
+        const applied = {
+          encodeConcurrency:
+            data?.applied?.encodeConcurrency ?? preferred.encodeConcurrency,
+          publishConcurrency:
+            data?.applied?.publishConcurrency ?? preferred.publishConcurrency,
+        };
+        localStorage.setItem(ENCODE_CONCURRENCY_KEY, String(applied.encodeConcurrency));
+        localStorage.setItem(PUBLISH_CONCURRENCY_KEY, String(applied.publishConcurrency));
+        fillJobConcurrencyInputs(applied);
+        return applied;
+      }
 
       function token() {
         return localStorage.getItem(TOKEN_KEY);
@@ -1233,6 +1340,7 @@
         $("app").classList.remove("hidden");
         $("sessionBox").classList.remove("hidden");
         $("who").textContent = `${user.displayName} · ${user.email}`;
+        fillJobConcurrencyInputs(getPreferredJobConcurrency());
         void loadCapabilities();
       }
 
@@ -1241,6 +1349,9 @@
           const data = await api("/v1/admin/capabilities");
           capabilities = data;
           applyCapabilities(data);
+          if (data.canEncode) {
+            await applyJobConcurrencyFromCache();
+          }
         } catch (error) {
           console.warn("capabilities", error);
         }
@@ -1275,14 +1386,14 @@
           $("tab-library").classList.remove("hidden");
           $("tab-jobs").classList.add("hidden");
         } else if (cap.publishesToCloud) {
+          const preferred = getPreferredJobConcurrency();
           banner.style.display = "";
           title.textContent = "Mac publisher → R2 → cloud";
           body.textContent =
-            `Encode here (one at a time). When encode finishes, press Upload CDN — uploads run in parallel and do not block the next encode. Target: ${cap.publishTargetUrl}`;
+            `Encode here (up to ${preferred.encodeConcurrency} parallel). When encode finishes, press Upload CDN — uploads run in parallel (up to ${preferred.publishConcurrency}). Target: ${cap.publishTargetUrl}`;
           $("panelSub").textContent =
             "Mac encode → press Upload CDN → R2 + GCE. Jobs show progress.";
-          $("jobsHelp").textContent =
-            "Encode serial; CDN upload parallel (manual button). Cancel encode deletes; cancel upload keeps local files.";
+          fillJobConcurrencyInputs(preferred);
         } else {
           banner.style.display = "";
           title.textContent = "Local encode (no cloud target)";
@@ -2959,6 +3070,24 @@
       $("episodeUploadBtn").addEventListener("click", () => void uploadEpisodes());
       $("jobsTabProgress").addEventListener("click", () => setJobsView("progress"));
       $("jobsTabFinished").addEventListener("click", () => setJobsView("finished"));
+      $("saveJobConcurrencyBtn").addEventListener("click", () => {
+        void (async () => {
+          const btn = $("saveJobConcurrencyBtn");
+          const hint = $("jobConcurrencyHint");
+          try {
+            btn.disabled = true;
+            await saveJobConcurrencyFromInputs();
+            if (hint) hint.textContent = `${hint.textContent} Saved.`;
+          } catch (error) {
+            if (hint) {
+              hint.textContent =
+                error?.message || "Could not save concurrency settings.";
+            }
+          } finally {
+            btn.disabled = false;
+          }
+        })();
+      });
       $("jobsBody").addEventListener("click", (event) => {
         const uploadBtn = event.target.closest("[data-cancel-upload]");
         if (uploadBtn) {

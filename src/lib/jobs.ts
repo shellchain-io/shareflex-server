@@ -58,15 +58,78 @@ const jobs = new Map<string, AdminJob>();
 let encodeQueue: QueueItem[] = [];
 let publishQueue: QueueItem[] = [];
 
-let encodeActive = false;
-let encodeJobId: string | null = null;
-let encodeAbort: AbortController | null = null;
-
+const encodeActive = new Map<string, AbortController>();
 const publishActive = new Map<string, AbortController>();
-const PUBLISH_CONCURRENCY = 4;
+
+const DEFAULT_ENCODE_CONCURRENCY = 10;
+const DEFAULT_PUBLISH_CONCURRENCY = 4;
+const MIN_CONCURRENCY = 1;
+const MAX_ENCODE_CONCURRENCY = 20;
+const MAX_PUBLISH_CONCURRENCY = 20;
+
+let encodeConcurrency = DEFAULT_ENCODE_CONCURRENCY;
+let publishConcurrency = DEFAULT_PUBLISH_CONCURRENCY;
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function clamp(n: number, min: number, max: number): number {
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+}
+
+export function getJobConcurrency(): {
+  encodeConcurrency: number;
+  publishConcurrency: number;
+  defaults: { encodeConcurrency: number; publishConcurrency: number };
+  limits: {
+    encodeMin: number;
+    encodeMax: number;
+    publishMin: number;
+    publishMax: number;
+  };
+} {
+  return {
+    encodeConcurrency,
+    publishConcurrency,
+    defaults: {
+      encodeConcurrency: DEFAULT_ENCODE_CONCURRENCY,
+      publishConcurrency: DEFAULT_PUBLISH_CONCURRENCY,
+    },
+    limits: {
+      encodeMin: MIN_CONCURRENCY,
+      encodeMax: MAX_ENCODE_CONCURRENCY,
+      publishMin: MIN_CONCURRENCY,
+      publishMax: MAX_PUBLISH_CONCURRENCY,
+    },
+  };
+}
+
+export function setJobConcurrency(input: {
+  encodeConcurrency?: number;
+  publishConcurrency?: number;
+}): {
+  encodeConcurrency: number;
+  publishConcurrency: number;
+} {
+  if (input.encodeConcurrency !== undefined) {
+    encodeConcurrency = clamp(
+      input.encodeConcurrency,
+      MIN_CONCURRENCY,
+      MAX_ENCODE_CONCURRENCY,
+    );
+  }
+  if (input.publishConcurrency !== undefined) {
+    publishConcurrency = clamp(
+      input.publishConcurrency,
+      MIN_CONCURRENCY,
+      MAX_PUBLISH_CONCURRENCY,
+    );
+  }
+  void pumpEncodeQueue();
+  void pumpPublishQueue();
+  return { encodeConcurrency, publishConcurrency };
 }
 
 function laneForKind(kind: AdminJobKind): JobLane {
@@ -190,9 +253,12 @@ export function cancelAdminJob(
     return { job, ok: true, mode: "publish" };
   }
 
-  if (job.status === "running" && job.lane === "encode" && encodeJobId === id && encodeAbort) {
-    encodeAbort.abort();
-    return { job, ok: true, mode: "encode" };
+  if (job.status === "running" && job.lane === "encode") {
+    const abort = encodeActive.get(id);
+    if (abort) {
+      abort.abort();
+      return { job, ok: true, mode: "encode" };
+    }
   }
 
   if (job.status === "running" && job.lane === "publish") {
@@ -328,32 +394,29 @@ function applyAbortOutcome(
 }
 
 async function pumpEncodeQueue(): Promise<void> {
-  if (encodeActive) return;
-  const next = encodeQueue.shift();
-  if (!next) return;
+  while (encodeActive.size < encodeConcurrency && encodeQueue.length > 0) {
+    const next = encodeQueue.shift();
+    if (!next) break;
+    const job = jobs.get(next.id);
+    if (!job || job.status === "cancelled") {
+      continue;
+    }
 
-  const job = jobs.get(next.id);
-  if (!job || job.status === "cancelled") {
-    void pumpEncodeQueue();
-    return;
-  }
-
-  encodeActive = true;
-  encodeJobId = next.id;
-  encodeAbort = new AbortController();
-
-  try {
-    await runJobItem(next, encodeAbort);
-  } finally {
-    encodeActive = false;
-    encodeJobId = null;
-    encodeAbort = null;
-    void pumpEncodeQueue();
+    const abort = new AbortController();
+    encodeActive.set(next.id, abort);
+    void (async () => {
+      try {
+        await runJobItem(next, abort);
+      } finally {
+        encodeActive.delete(next.id);
+        void pumpEncodeQueue();
+      }
+    })();
   }
 }
 
 async function pumpPublishQueue(): Promise<void> {
-  while (publishActive.size < PUBLISH_CONCURRENCY && publishQueue.length > 0) {
+  while (publishActive.size < publishConcurrency && publishQueue.length > 0) {
     const next = publishQueue.shift();
     if (!next) break;
     const job = jobs.get(next.id);
