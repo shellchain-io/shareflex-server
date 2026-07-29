@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -23,7 +24,22 @@ import libraryRoutes from "./routes/library.js";
 import mediaRoutes from "./routes/media.js";
 import adminRoutes from "./routes/admin.js";
 
-const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+/** Works for both `tsx src/…` and `node dist/src/…`. */
+function resolveServerRoot(): string {
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 6; i++) {
+    if (
+      existsSync(path.join(dir, "package.json")) &&
+      existsSync(path.join(dir, "public", "admin"))
+    ) {
+      return dir;
+    }
+    dir = path.dirname(dir);
+  }
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+}
+
+const serverRoot = resolveServerRoot();
 
 export async function buildApp(config: Env) {
   setMediaPublicBaseUrl(config.MEDIA_PUBLIC_BASE_URL || null);
@@ -33,7 +49,6 @@ export async function buildApp(config: Env) {
       level: config.LOG_LEVEL,
     },
     bodyLimit: 2 * 1024 * 1024,
-    // Bind expectations: localhost only when behind Tailscale Serve.
     trustProxy: false,
   }).withTypeProvider<ZodTypeProvider>();
 
@@ -53,8 +68,8 @@ export async function buildApp(config: Env) {
 
   await app.register(multipart, {
     limits: {
-      fileSize: 20 * 1024 * 1024 * 1024, // 20 GB
-      files: 4, // video + thumbnail (and room for future extras)
+      fileSize: 20 * 1024 * 1024 * 1024,
+      files: 4,
       fields: 40,
     },
   });

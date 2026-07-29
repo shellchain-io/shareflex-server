@@ -1,9 +1,21 @@
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Movie, SubtitleTrack } from "../../generated/prisma/client.js";
 import { publicObjectUrl, usesPublicMediaCdn } from "./media-public.js";
 
-const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+function resolveServerRoot(): string {
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 6; i++) {
+    if (existsSync(path.join(dir, "package.json"))) {
+      return dir;
+    }
+    dir = path.dirname(dir);
+  }
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+}
+
+const serverRoot = resolveServerRoot();
 
 export function resolveMediaRoot(mediaRootEnv: string): string {
   return path.isAbsolute(mediaRootEnv)
