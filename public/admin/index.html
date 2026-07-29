@@ -1,0 +1,2345 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ShareFlex Library</title>
+    <style>
+      :root {
+        --bg: #07070a;
+        --panel: #121218;
+        --line: #2a2a34;
+        --text: #f4f4f6;
+        --muted: #9a9aa6;
+        --dim: #6e6e7a;
+        --accent: #e8e8ed;
+        --danger: #ff7b72;
+        --ok: #3dd68c;
+        --warn: #f5a524;
+        --run: #6ea8fe;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(900px 420px at 12% -10%, #1a1a28, transparent 55%),
+          radial-gradient(700px 380px at 90% 0%, #14141f, transparent 50%),
+          var(--bg);
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 32px 20px 64px;
+      }
+      .brand {
+        font-size: 13px;
+        letter-spacing: 1.6px;
+        text-transform: uppercase;
+        color: var(--dim);
+        font-weight: 700;
+      }
+      h1 {
+        margin: 8px 0 0;
+        font-size: 34px;
+        letter-spacing: -0.7px;
+      }
+      h2 { margin: 0 0 16px; font-size: 18px; }
+      .sub {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+      .card {
+        margin-top: 24px;
+        background: rgba(18, 18, 24, 0.92);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 22px;
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: end;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        color: var(--dim);
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        margin-bottom: 6px;
+      }
+      input, select, textarea, button { font: inherit; }
+      input, select, textarea {
+        width: 100%;
+        background: #0c0c12;
+        border: 1px solid var(--line);
+        color: var(--text);
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+      textarea { min-height: 78px; resize: vertical; }
+      .field { flex: 1; min-width: 160px; }
+      .field.grow { flex: 2; min-width: 220px; }
+      .field.sm { flex: 0.6; min-width: 110px; }
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 12px 18px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .btn-primary { background: var(--accent); color: #0b0b0f; }
+      .btn-ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--line);
+      }
+      .tabs {
+        display: flex;
+        gap: 8px;
+        margin-top: 28px;
+        flex-wrap: wrap;
+      }
+      .tab {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid transparent;
+        border-radius: 999px;
+        padding: 10px 16px;
+      }
+      .tab.active {
+        color: var(--text);
+        border-color: var(--line);
+        background: #16161f;
+      }
+      .hidden { display: none !important; }
+      .msg { margin-top: 14px; font-size: 14px; color: var(--muted); }
+      .msg.error { color: var(--danger); }
+      .msg.ok { color: var(--ok); }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+      }
+      th, td {
+        text-align: left;
+        padding: 12px 8px;
+        border-bottom: 1px solid var(--line);
+        font-size: 14px;
+        vertical-align: top;
+      }
+      th {
+        color: var(--dim);
+        font-size: 11px;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+      .pill {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .pill.ready { background: rgba(61,214,140,0.15); color: var(--ok); }
+      .pill.queued { background: rgba(245,165,36,0.15); color: var(--warn); }
+      .pill.queued_upload { background: rgba(245,165,36,0.15); color: var(--warn); }
+      .pill.queued_encode { background: rgba(245,165,36,0.15); color: var(--warn); }
+      .pill.uploading { background: rgba(110,168,254,0.15); color: var(--run); }
+      .pill.encoding { background: rgba(110,168,254,0.15); color: var(--run); }
+      .pill.running { background: rgba(110,168,254,0.15); color: var(--run); }
+      .pill.failed { background: rgba(255,123,114,0.15); color: var(--danger); }
+      .pill.succeeded { background: rgba(61,214,140,0.15); color: var(--ok); }
+      .pill.cancelled { background: rgba(110,110,120,0.2); color: var(--muted); }
+      .jobs-subtabs {
+        display: flex;
+        gap: 8px;
+        margin: 14px 0 12px;
+        flex-wrap: wrap;
+      }
+      .jobs-subtab {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid transparent;
+        border-radius: 999px;
+        padding: 8px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .jobs-subtab.active {
+        color: var(--text);
+        border-color: var(--line);
+        background: #16161f;
+      }
+      .btn-cancel-job {
+        background: transparent;
+        color: var(--danger);
+        border: 1px solid rgba(255,123,114,0.35);
+        border-radius: 8px;
+        padding: 5px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .click-row { cursor: pointer; }
+      .click-row:hover td { background: rgba(255,255,255,0.03); }
+      .click-row td:first-child {
+        color: var(--text);
+        font-weight: 600;
+        text-decoration: underline;
+        text-decoration-color: rgba(244,244,246,0.25);
+        text-underline-offset: 3px;
+      }
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        background: rgba(0,0,0,0.62);
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 48px 16px;
+        overflow: auto;
+      }
+      .modal-sheet {
+        width: min(720px, 100%);
+        background: #121218;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 20px 22px 24px;
+        box-shadow: 0 24px 80px rgba(0,0,0,0.45);
+      }
+      .modal-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        margin-bottom: 16px;
+      }
+      .modal-body { color: var(--text); font-size: 14px; line-height: 1.45; }
+      .detail-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+        margin: 0 0 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .detail-section {
+        margin-top: 18px;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+      }
+      .detail-section h3 {
+        margin: 0 0 10px;
+        font-size: 14px;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      .ep-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(42,42,52,0.7);
+      }
+      .ep-row:last-child { border-bottom: 0; }
+      .ep-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+      .btn-play {
+        background: var(--accent);
+        color: #0b0b0f;
+        border: 0;
+        border-radius: 8px;
+        padding: 7px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .btn-play:disabled { opacity: 0.4; cursor: not-allowed; }
+      .btn-danger-ghost {
+        background: transparent;
+        color: var(--danger);
+        border: 1px solid rgba(255,123,114,0.35);
+        border-radius: 8px;
+        padding: 7px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .btn-danger-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+      .btn-danger-ghost.compact {
+        padding: 5px 10px;
+        font-size: 11px;
+      }
+      .btn-cdn {
+        border: 1px solid rgba(255,255,255,0.22);
+        background: rgba(255,255,255,0.08);
+        color: #eee;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .btn-cdn:hover { background: rgba(255,255,255,0.14); }
+      .btn-cdn.compact {
+        padding: 5px 10px;
+        font-size: 11px;
+      }
+      .btn-cdn:disabled { opacity: 0.4; cursor: not-allowed; }
+      .detail-danger {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+      }
+      .detail-danger .hint {
+        flex-basis: 100%;
+        margin: 0 0 2px;
+        font-size: 12px;
+        color: var(--dim);
+      }
+      .season-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 14px 0 4px;
+      }
+      .season-tab {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 8px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .season-tab.active {
+        color: var(--text);
+        background: #1a1a24;
+        border-color: #3a3a48;
+      }
+      .preview-box {
+        margin-top: 14px;
+        background: #0a0a0e;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .preview-box video {
+        display: block;
+        width: 100%;
+        max-height: 360px;
+        background: #000;
+      }
+      .preview-caption {
+        padding: 10px 12px;
+        font-size: 13px;
+        color: var(--muted);
+        border-top: 1px solid var(--line);
+      }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+      }
+      .muted { color: var(--muted); font-size: 13px; }
+      .file-hint { color: var(--dim); font-size: 12px; margin-top: 6px; }
+      .episode-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .episode-item {
+        background: #121218;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+      .episode-item .ep-file {
+        color: var(--dim);
+        font-size: 12px;
+        margin-bottom: 8px;
+        word-break: break-all;
+      }
+      .episode-item label {
+        display: block;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .episode-item .ep-fields {
+        display: flex;
+        gap: 12px;
+        align-items: flex-end;
+        flex-wrap: wrap;
+      }
+      .episode-item .ep-num {
+        width: 88px;
+        flex-shrink: 0;
+      }
+      .episode-item .ep-name {
+        flex: 1;
+        min-width: 160px;
+      }
+      .episode-item .ep-code {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        margin-top: 8px;
+      }
+      .episode-item input[type="number"] {
+        width: 100%;
+      }
+      .mode-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+      .mode-chip {
+        border: 1px solid var(--line);
+        background: #0c0c12;
+        color: var(--muted);
+        border-radius: 999px;
+        padding: 8px 14px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .mode-chip.active {
+        color: var(--text);
+        background: #1a1a24;
+        border-color: #3a3a48;
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%);
+        z-index: 50;
+        max-width: min(560px, calc(100vw - 32px));
+        background: #1a1a24;
+        border: 1px solid #3a3a48;
+        color: var(--text);
+        border-radius: 14px;
+        padding: 14px 18px;
+        font-size: 14px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+        display: none;
+      }
+      .toast.show { display: block; }
+      .toast strong { color: var(--warn); }
+      @media (max-width: 720px) {
+        h1 { font-size: 28px; }
+        .topbar { flex-direction: column; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="brand">ShareFlex</div>
+      <div class="topbar">
+        <div>
+          <h1>Library panel</h1>
+          <p class="sub">Movies go one at a time. Episodes: one season thumbnail, then as many videos as you need. Track progress in Jobs.</p>
+        </div>
+        <div id="sessionBox" class="hidden">
+          <div class="muted" id="who"></div>
+          <button class="btn-ghost" id="logoutBtn" style="margin-top:10px">Sign out</button>
+        </div>
+      </div>
+
+      <section id="loginCard" class="card">
+        <h2>Owner sign in</h2>
+        <div class="row">
+          <div class="field grow">
+            <label>Email</label>
+            <input id="email" type="email" value="" autocomplete="username" />
+          </div>
+          <div class="field grow">
+            <label>Password</label>
+            <input id="password" type="password" value="" autocomplete="current-password" />
+          </div>
+          <div class="field" style="flex:0">
+            <label>&nbsp;</label>
+            <button class="btn-primary" id="loginBtn">Sign in</button>
+          </div>
+        </div>
+        <div class="msg" id="loginMsg"></div>
+      </section>
+
+      <section id="app" class="hidden">
+        <div class="tabs">
+          <button class="tab active" data-tab="movie">Upload movies</button>
+          <button class="tab" data-tab="episode">Upload episodes</button>
+          <button class="tab" data-tab="library">Library</button>
+          <button class="tab" data-tab="jobs">Jobs</button>
+        </div>
+
+        <section id="tab-movie" class="card">
+          <h2>Add a movie</h2>
+          <p class="muted" style="margin:0 0 16px">One movie at a time. Name, video, and thumbnail are required.</p>
+          <div class="row">
+            <div class="field grow">
+              <label>Video file (required)</label>
+              <input id="movieFiles" type="file" accept="video/*,.mkv,.mp4,.mov,.m4v" />
+            </div>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <div class="field grow">
+              <label>Movie name (required)</label>
+              <input id="movieTitle" placeholder="Filled from the file name — edit if you want" />
+              <div class="file-hint">Defaults to the video file name when you pick a file.</div>
+            </div>
+            <div class="field sm">
+              <label>Year (optional)</label>
+              <input id="movieYear" type="number" placeholder="2024" />
+            </div>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <div class="field grow">
+              <label>Thumbnail (required)</label>
+              <input id="movieThumbnail" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" />
+              <div class="file-hint">Poster shown on the movie detail screen.</div>
+            </div>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <div class="field grow">
+              <label>Description (optional)</label>
+              <input id="movieDescription" placeholder="Short synopsis for this movie" />
+            </div>
+          </div>
+          <div style="margin-top:16px">
+            <button class="btn-primary" id="movieUploadBtn">Upload — track in Jobs</button>
+          </div>
+          <div class="msg" id="movieMsg"></div>
+        </section>
+
+        <section id="tab-episode" class="card hidden">
+          <h2>Add series episodes</h2>
+          <p class="muted" style="margin:0 0 16px">Pick one season (with its thumbnail), then add one or many episode videos for that season.</p>
+
+          <div class="mode-row">
+            <button type="button" class="mode-chip active" data-show-mode="existing" id="modeExisting">Existing series</button>
+            <button type="button" class="mode-chip" data-show-mode="new" id="modeNew">New series</button>
+          </div>
+
+          <div id="existingShowBlock">
+            <div class="row">
+              <div class="field grow">
+                <label>Series</label>
+                <select id="showSelect">
+                  <option value="">Select a series…</option>
+                </select>
+              </div>
+              <div class="field grow">
+                <label>Season</label>
+                <select id="seasonSelect" disabled>
+                  <option value="">Select season…</option>
+                </select>
+              </div>
+            </div>
+            <div class="row hidden" id="newSeasonRow" style="margin-top:12px">
+              <div class="field sm">
+                <label>New season number</label>
+                <input id="newSeasonNumber" type="number" min="0" placeholder="2" />
+              </div>
+              <div class="field grow">
+                <div class="file-hint" style="margin-top:28px">Creates this season on the series, then you attach its thumbnail below.</div>
+              </div>
+            </div>
+            <div class="row" id="seasonDescExistingRow" style="margin-top:12px">
+              <div class="field grow">
+                <label id="existingSeasonDescLabel">Season description</label>
+                <input id="existingSeasonDescription" placeholder="Optional — shown when this season is active in the app" />
+              </div>
+            </div>
+            <div class="row" id="seasonThumbExistingRow" style="margin-top:12px">
+              <div class="field grow">
+                <label id="existingSeasonThumbLabel">Season thumbnail</label>
+                <input id="existingSeasonThumbnail" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" />
+                <div class="file-hint" id="existingSeasonThumbHint">One thumbnail for this season. Required when the season is new.</div>
+              </div>
+            </div>
+            <div class="row" id="episodeModeRow" style="margin-top:12px">
+              <div class="field grow">
+                <label>Upload mode</label>
+                <select id="episodeMode">
+                  <option value="append" selected>Append next episodes (after last)</option>
+                  <option value="replace">Replace an existing episode</option>
+                </select>
+              </div>
+              <div class="field grow hidden" id="replaceEpisodeField">
+                <label>Episode to replace</label>
+                <select id="replaceEpisodeSelect">
+                  <option value="">Select episode…</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div id="newShowBlock" class="hidden">
+            <div class="row">
+              <div class="field grow">
+                <label>Show title</label>
+                <input id="showTitle" placeholder="Series name" />
+              </div>
+              <div class="field sm">
+                <label>Show year</label>
+                <input id="showYear" type="number" placeholder="2020" />
+              </div>
+            </div>
+            <div class="file-hint" style="margin-top:8px">Starts at Season 1 automatically.</div>
+            <div class="row" style="margin-top:12px">
+              <div class="field grow">
+                <label>Season description</label>
+                <input id="newSeasonDescription" placeholder="Optional — shown when this season is active in the app" />
+              </div>
+            </div>
+            <div class="row" style="margin-top:12px">
+              <div class="field grow">
+                <label>Season thumbnail (required)</label>
+                <input id="newSeasonThumbnail" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" />
+                <div class="file-hint">One poster for this season — shown when the season is selected in the app.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:12px">
+            <div class="field grow">
+              <label>Episode videos</label>
+              <input id="episodeFiles" type="file" accept="video/*,.mkv,.mp4,.mov,.m4v" multiple />
+              <div class="file-hint">Add one or many videos for this season. Each gets a friendly name below (defaults to the file name — e.g. Pilot).</div>
+            </div>
+          </div>
+          <div id="episodeList" class="episode-list"></div>
+          <div style="margin-top:16px">
+            <button class="btn-primary" id="episodeUploadBtn">Upload episodes — track in Jobs</button>
+          </div>
+          <div class="msg" id="episodeMsg"></div>
+        </section>
+
+        <section id="tab-library" class="card hidden">
+          <h2>Movies</h2>
+          <p class="muted" style="margin:0 0 8px">Click a title to see upload / ready status.</p>
+          <table>
+            <thead><tr><th>Title</th><th>Year</th><th>Status</th></tr></thead>
+            <tbody id="moviesBody"></tbody>
+          </table>
+          <h2 style="margin:28px 0 8px;font-size:18px">Shows</h2>
+          <p class="muted" style="margin:0 0 8px">Click a show to see seasons and which episodes are ready.</p>
+          <table>
+            <thead><tr><th>Title</th><th>Seasons</th><th>Episodes</th><th>Status</th></tr></thead>
+            <tbody id="showsBody"></tbody>
+          </table>
+        </section>
+
+        <section id="tab-jobs" class="card hidden">
+          <h2>Jobs</h2>
+          <p class="muted">Uploads run up to 5 at a time. Encoding runs one at a time on this Mac.</p>
+          <div class="jobs-subtabs">
+            <button type="button" class="jobs-subtab active" data-jobs-tab="progress" id="jobsTabProgress">In progress</button>
+            <button type="button" class="jobs-subtab" data-jobs-tab="finished" id="jobsTabFinished">Finished</button>
+          </div>
+          <table>
+            <thead><tr><th>Job</th><th>Kind</th><th>Status</th><th>Updated</th><th></th></tr></thead>
+            <tbody id="jobsBody"></tbody>
+          </table>
+        </section>
+      </section>
+    </div>
+
+    <div id="pendingToast" class="toast" role="status">
+      <strong>Don’t close</strong> this tab — files are still uploading. Encoding continues on the Mac after upload finishes.
+    </div>
+
+    <div id="detailModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal-sheet">
+        <div class="modal-head">
+          <div>
+            <div class="brand" id="detailKind">Detail</div>
+            <h2 id="detailTitle" style="margin:6px 0 0;font-size:22px">—</h2>
+          </div>
+          <button type="button" class="btn-ghost" id="detailCloseBtn">Close</button>
+        </div>
+        <div id="detailBody" class="modal-body muted">Loading…</div>
+        <div id="previewBox" class="preview-box hidden">
+          <video id="previewVideo" controls playsinline></video>
+          <div class="preview-caption" id="previewCaption">Preview</div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js"></script>
+    <script>
+      const TOKEN_KEY = "shareflex_admin_token";
+      const REFRESH_KEY = "shareflex_admin_refresh";
+      const USER_KEY = "shareflex_admin_user";
+      const $ = (id) => document.getElementById(id);
+
+      let showCatalog = [];
+      let showMode = "existing";
+      let movieFiles = [];
+      let episodeFiles = [];
+      let episodeTitles = [];
+      let episodeNumbers = [];
+      let localUploads = [];
+      let serverJobs = [];
+      let pollTimer = null;
+      let jobsView = "progress";
+      const UPLOAD_CONCURRENCY = 5;
+
+      function token() {
+        return localStorage.getItem(TOKEN_KEY);
+      }
+      function refreshToken() {
+        return localStorage.getItem(REFRESH_KEY);
+      }
+      function setSession(accessToken, user, nextRefreshToken) {
+        localStorage.setItem(TOKEN_KEY, accessToken);
+        if (nextRefreshToken) {
+          localStorage.setItem(REFRESH_KEY, nextRefreshToken);
+        }
+        localStorage.setItem(USER_KEY, JSON.stringify(user));
+      }
+      function clearSession() {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(REFRESH_KEY);
+        localStorage.removeItem(USER_KEY);
+      }
+
+      let refreshInFlight = null;
+      async function refreshAccessToken() {
+        const rt = refreshToken();
+        if (!rt) return false;
+        if (refreshInFlight) return refreshInFlight;
+        refreshInFlight = (async () => {
+          try {
+            const res = await fetch("/v1/auth/refresh", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ refreshToken: rt }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              clearSession();
+              return false;
+            }
+            setSession(json.accessToken, json.user, json.refreshToken);
+            return true;
+          } catch {
+            return false;
+          } finally {
+            refreshInFlight = null;
+          }
+        })();
+        return refreshInFlight;
+      }
+
+      async function api(path, options = {}, allowRetry = true) {
+        const headers = new Headers(options.headers || {});
+        const t = token();
+        if (t) headers.set("authorization", `Bearer ${t}`);
+        const res = await fetch(path, { ...options, headers });
+        if (res.status === 401 && allowRetry && refreshToken()) {
+          const ok = await refreshAccessToken();
+          if (ok) return api(path, options, false);
+        }
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(json.message || `Request failed (${res.status})`);
+        }
+        return json;
+      }
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;");
+      }
+      function titleFromFilename(name) {
+        return name
+          .replace(/\.[^.]+$/, "")
+          .replace(/[._]+/g, " ")
+          .replace(/[Ss]\d{1,2}[Ee]\d{1,3}/g, "")
+          .replace(/\s+/g, " ")
+          .trim() || name.replace(/\.[^.]+$/, "");
+      }
+
+      function nextEpisodeStartNumber() {
+        const seasonNumber = selectedSeasonNumber();
+        if (!Number.isInteger(seasonNumber) || seasonNumber < 0) return 1;
+        const showId = $("showSelect")?.value || "";
+        const seasonRec = selectedSeasonRecord();
+        const catalogMax = seasonRec?.maxEpisodeNumber ?? 0;
+        const seriesLabel =
+          $("showSelect")?.selectedOptions?.[0]?.textContent?.trim() ||
+          $("showTitle")?.value?.trim() ||
+          "";
+        const reserved = highestReservedEpisode(showId, seasonNumber, seriesLabel);
+        return Math.max(catalogMax, reserved) + 1;
+      }
+
+      function assignDefaultEpisodeNumbers() {
+        const mode = $("episodeMode")?.value || "append";
+        if (mode === "replace") {
+          const replaceEpisode = Number($("replaceEpisodeSelect")?.value);
+          episodeNumbers = episodeFiles.map(() =>
+            Number.isInteger(replaceEpisode) && replaceEpisode > 0 ? replaceEpisode : 1,
+          );
+          return;
+        }
+        let next = nextEpisodeStartNumber();
+        episodeNumbers = episodeFiles.map(() => {
+          const n = next;
+          next += 1;
+          return n;
+        });
+      }
+
+      function renderEpisodeList() {
+        const list = $("episodeList");
+        if (!episodeFiles.length) {
+          list.innerHTML = "";
+          return;
+        }
+        const seasonNumber = selectedSeasonNumber();
+        const seasonLabel = Number.isInteger(seasonNumber) ? seasonNumber : 1;
+        list.innerHTML = episodeFiles
+          .map((file, index) => {
+            const num = episodeNumbers[index] ?? index + 1;
+            const title = episodeTitles[index] || titleFromFilename(file.name);
+            const code = `S${String(seasonLabel).padStart(2, "0")}E${String(num).padStart(2, "0")}`;
+            return `<div class="episode-item">
+              <div class="ep-file">${escapeHtml(file.name)}</div>
+              <div class="ep-fields">
+                <div class="ep-num">
+                  <label>Episode #</label>
+                  <input
+                    type="number"
+                    min="1"
+                    class="episode-number-input"
+                    data-index="${index}"
+                    value="${num}"
+                  />
+                </div>
+                <div class="ep-name">
+                  <label>Episode name</label>
+                  <input
+                    type="text"
+                    class="episode-title-input"
+                    data-index="${index}"
+                    value="${escapeHtml(title)}"
+                    placeholder="e.g. Pilot"
+                  />
+                </div>
+              </div>
+              <div class="ep-code" data-code-index="${index}">In app: ${escapeHtml(code)}</div>
+            </div>`;
+          })
+          .join("");
+        list.querySelectorAll(".episode-title-input").forEach((input) => {
+          input.addEventListener("input", () => {
+            const i = Number(input.dataset.index);
+            episodeTitles[i] = input.value;
+          });
+        });
+        list.querySelectorAll(".episode-number-input").forEach((input) => {
+          input.addEventListener("input", () => {
+            const i = Number(input.dataset.index);
+            const value = Number(input.value);
+            episodeNumbers[i] = value;
+            const codeEl = list.querySelector(`[data-code-index="${i}"]`);
+            if (codeEl && Number.isInteger(value) && value > 0) {
+              codeEl.textContent = `In app: S${String(seasonLabel).padStart(2, "0")}E${String(value).padStart(2, "0")}`;
+            }
+          });
+        });
+      }
+
+      function readEpisodeTitlesFromForm() {
+        const inputs = [...document.querySelectorAll(".episode-title-input")];
+        if (!inputs.length) return episodeTitles.slice();
+        return inputs.map((input, index) => {
+          const value = input.value.trim();
+          return value || titleFromFilename(episodeFiles[index]?.name || `Episode ${index + 1}`);
+        });
+      }
+
+      function readEpisodeNumbersFromForm() {
+        const inputs = [...document.querySelectorAll(".episode-number-input")];
+        if (!inputs.length) return episodeNumbers.slice();
+        return inputs.map((input, index) => {
+          const value = Number(input.value);
+          return Number.isInteger(value) && value > 0
+            ? value
+            : episodeNumbers[index] || index + 1;
+        });
+      }
+
+      function existingEpisodeNumbersInSeason(seasonNumber) {
+        const season = selectedSeasonRecord();
+        if (!season || season.seasonNumber !== seasonNumber) {
+          const show = showCatalog.find((s) => s.id === $("showSelect").value);
+          const match = show?.seasons?.find((s) => s.seasonNumber === seasonNumber);
+          return new Set((match?.episodes || []).map((ep) => ep.episodeNumber));
+        }
+        return new Set((season.episodes || []).map((ep) => ep.episodeNumber));
+      }
+
+      function parseSxEx(name) {
+        const m = name.match(/[Ss](\d{1,2})[Ee](\d{1,3})/);
+        if (!m) return null;
+        return { season: Number(m[1]), episode: Number(m[2]) };
+      }
+
+      function showApp(user) {
+        $("loginCard").classList.add("hidden");
+        $("app").classList.remove("hidden");
+        $("sessionBox").classList.remove("hidden");
+        $("who").textContent = `${user.displayName} · ${user.email}`;
+      }
+      function showLogin(msg) {
+        $("loginCard").classList.remove("hidden");
+        $("app").classList.add("hidden");
+        $("sessionBox").classList.add("hidden");
+        if (msg) {
+          $("loginMsg").textContent = msg;
+          $("loginMsg").className = "msg error";
+        }
+      }
+
+      function updateToast() {
+        const uploading =
+          localUploads.some((u) => u.status === "uploading" || u.status === "queued");
+        $("pendingToast").classList.toggle("show", uploading);
+      }
+
+      function jobStatusMeta(kind, status) {
+        if (kind === "upload") {
+          if (status === "queued") return { label: "Queued for uploading", pill: "queued_upload" };
+          if (status === "uploading") return { label: "Uploading", pill: "uploading" };
+          if (status === "failed") return { label: "Failed", pill: "failed" };
+          if (status === "cancelled") return { label: "Cancelled", pill: "cancelled" };
+          return { label: status, pill: status };
+        }
+        if (kind === "publish") {
+          if (status === "queued") return { label: "Queued for CDN", pill: "queued_upload" };
+          if (status === "running") return { label: "Uploading to CDN", pill: "uploading" };
+          if (status === "succeeded") return { label: "CDN uploaded", pill: "succeeded" };
+          if (status === "failed") return { label: "CDN failed", pill: "failed" };
+          if (status === "cancelled") return { label: "Cancelled", pill: "cancelled" };
+          return { label: status, pill: status };
+        }
+        if (status === "queued") return { label: "Queued for encoding", pill: "queued_encode" };
+        if (status === "running") return { label: "Encoding", pill: "encoding" };
+        if (status === "succeeded") return { label: "Succeeded", pill: "succeeded" };
+        if (status === "failed") return { label: "Failed", pill: "failed" };
+        if (status === "cancelled") return { label: "Cancelled", pill: "cancelled" };
+        return { label: status, pill: status };
+      }
+
+      function isInProgressUpload(u) {
+        return u.status === "queued" || u.status === "uploading";
+      }
+      function isInProgressServer(j) {
+        return j.status === "queued" || j.status === "running";
+      }
+      function isFinishedUpload(u) {
+        return u.status === "failed" || u.status === "cancelled";
+      }
+      function isFinishedServer(j) {
+        return j.status === "succeeded" || j.status === "failed" || j.status === "cancelled";
+      }
+
+      function renderJobs() {
+        const uploadRows =
+          jobsView === "progress"
+            ? localUploads.filter(isInProgressUpload)
+            : localUploads.filter(isFinishedUpload);
+        const encodeRows =
+          jobsView === "progress"
+            ? serverJobs.filter(isInProgressServer)
+            : serverJobs.filter(isFinishedServer);
+
+        const rows = [
+          ...uploadRows.map((u) => {
+            const meta = jobStatusMeta("upload", u.status);
+            const canCancel = u.status === "queued" || u.status === "uploading";
+            return `<tr>
+              <td><strong>${escapeHtml(u.title)}</strong><div class="muted">${escapeHtml(u.detail)}${
+                u.status === "uploading" && u.progress != null ? ` · ${u.progress}%` : ""
+              }</div></td>
+              <td>${escapeHtml(u.kind)}</td>
+              <td><span class="pill ${meta.pill}">${meta.label}</span></td>
+              <td class="muted">${new Date(u.updatedAt).toLocaleString()}</td>
+              <td>${
+                canCancel
+                  ? `<button type="button" class="btn-cancel-job" data-cancel-upload="${escapeHtml(u.id)}">Cancel</button>`
+                  : ""
+              }</td>
+            </tr>`;
+          }),
+          ...encodeRows.map((job) => {
+            const meta = jobStatusMeta(job.kind || "encode", job.status);
+            const canCancel = job.status === "queued" || job.status === "running";
+            return `<tr>
+              <td><strong>${escapeHtml(job.title)}</strong><div class="muted">${escapeHtml(job.detail)}${
+                job.error ? ` · ${escapeHtml(job.error)}` : ""
+              }</div></td>
+              <td>${escapeHtml(job.kind === "publish" ? "cdn" : job.kind)}</td>
+              <td><span class="pill ${meta.pill}">${meta.label}</span></td>
+              <td class="muted">${new Date(job.updatedAt).toLocaleString()}</td>
+              <td>${
+                canCancel
+                  ? `<button type="button" class="btn-cancel-job" data-cancel-encode="${escapeHtml(job.id)}">Cancel</button>`
+                  : ""
+              }</td>
+            </tr>`;
+          }),
+        ];
+        $("jobsBody").innerHTML =
+          rows.join("") ||
+          `<tr><td colspan="5" class="muted">${
+            jobsView === "progress" ? "Nothing in progress." : "No finished jobs yet."
+          }</td></tr>`;
+
+        const progressCount =
+          localUploads.filter(isInProgressUpload).length +
+          serverJobs.filter(isInProgressServer).length;
+        const finishedCount =
+          localUploads.filter(isFinishedUpload).length +
+          serverJobs.filter(isFinishedServer).length;
+        $("jobsTabProgress").textContent = `In progress (${progressCount})`;
+        $("jobsTabFinished").textContent = `Finished (${finishedCount})`;
+        updateToast();
+      }
+
+      function setJobsView(view) {
+        jobsView = view;
+        $("jobsTabProgress").classList.toggle("active", view === "progress");
+        $("jobsTabFinished").classList.toggle("active", view === "finished");
+        renderJobs();
+      }
+
+      function cancelLocalUpload(id) {
+        const row = localUploads.find((u) => u.id === id);
+        if (!row) return;
+        if (row.status === "uploading" && row.xhr) {
+          try {
+            row.xhr.abort();
+          } catch {
+            /* ignore */
+          }
+        }
+        if (row.status === "queued" || row.status === "uploading") {
+          row.status = "cancelled";
+          row.progress = null;
+          row.updatedAt = new Date().toISOString();
+          renderJobs();
+        }
+      }
+
+      async function cancelEncodeJob(id) {
+        try {
+          await api(`/v1/admin/jobs/${encodeURIComponent(id)}/cancel`, {
+            method: "POST",
+          });
+          await refreshJobs();
+        } catch (error) {
+          alert(error.message || "Couldn’t cancel encode job.");
+        }
+      }
+
+      function startJobPolling() {
+        if (pollTimer) return;
+        pollTimer = setInterval(() => void refreshJobs(), 2500);
+        void refreshJobs();
+      }
+
+      function stopJobPollingIfIdle() {
+        const busy =
+          localUploads.some((u) => u.status === "uploading" || u.status === "queued") ||
+          serverJobs.some((j) => j.status === "queued" || j.status === "running");
+        if (!busy && pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      }
+
+      async function refreshJobs() {
+        try {
+          const data = await api("/v1/admin/jobs");
+          serverJobs = data.jobs || [];
+          renderJobs();
+          if (!serverJobs.some((j) => j.status === "queued" || j.status === "running")) {
+            await refreshLibrary();
+            await refreshShows();
+          }
+          stopJobPollingIfIdle();
+        } catch {
+          /* ignore transient errors while uploading */
+        }
+      }
+
+      async function runUploadPool(items, worker) {
+        let cursor = 0;
+        async function runOne() {
+          while (cursor < items.length) {
+            const index = cursor;
+            cursor += 1;
+            const item = items[index];
+            if (!item || item.row.status === "cancelled") continue;
+            await worker(item);
+          }
+        }
+        const workers = Array.from(
+          { length: Math.min(UPLOAD_CONCURRENCY, Math.max(items.length, 1)) },
+          () => runOne(),
+        );
+        await Promise.all(workers);
+      }
+
+      async function login() {
+        $("loginMsg").textContent = "Signing in…";
+        $("loginMsg").className = "msg";
+        try {
+          const data = await api("/v1/auth/login", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              email: $("email").value.trim(),
+              password: $("password").value,
+              deviceName: "ShareFlex Admin",
+              platform: "macos",
+            }),
+          });
+          if (data.user.role !== "owner") {
+            throw new Error("Owner account required for the library panel.");
+          }
+          setSession(data.accessToken, data.user, data.refreshToken);
+          showApp(data.user);
+          await refreshLibrary();
+          await refreshShows();
+          await refreshJobs();
+        } catch (error) {
+          $("loginMsg").textContent = error.message;
+          $("loginMsg").className = "msg error";
+        }
+      }
+
+      function switchTab(name) {
+        document.querySelectorAll(".tab").forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.tab === name);
+        });
+        ["movie", "episode", "library", "jobs"].forEach((id) => {
+          $(`tab-${id}`).classList.toggle("hidden", id !== name);
+        });
+        if (name === "library") void refreshLibrary();
+        if (name === "jobs") void refreshJobs();
+        if (name === "episode") void refreshShows();
+      }
+
+      function setShowMode(mode) {
+        showMode = mode;
+        $("modeExisting").classList.toggle("active", mode === "existing");
+        $("modeNew").classList.toggle("active", mode === "new");
+        $("existingShowBlock").classList.toggle("hidden", mode !== "existing");
+        $("newShowBlock").classList.toggle("hidden", mode !== "new");
+        if (mode === "existing") syncEpisodeModeUi();
+      }
+
+      async function refreshShows() {
+        const data = await api("/v1/admin/shows");
+        showCatalog = data.shows || [];
+        const select = $("showSelect");
+        const current = select.value;
+        select.innerHTML =
+          `<option value="">Select a series…</option>` +
+          showCatalog
+            .map(
+              (s) =>
+                `<option value="${escapeHtml(s.id)}">${escapeHtml(s.title)}${
+                  s.year ? ` (${s.year})` : ""
+                }</option>`,
+            )
+            .join("");
+        if (current && showCatalog.some((s) => s.id === current)) {
+          select.value = current;
+        }
+        populateSeasons();
+      }
+
+      function populateSeasons() {
+        const show = showCatalog.find((s) => s.id === $("showSelect").value);
+        const seasonSelect = $("seasonSelect");
+        if (!show) {
+          seasonSelect.disabled = true;
+          seasonSelect.innerHTML = `<option value="">Select season…</option>`;
+          $("newSeasonRow").classList.add("hidden");
+          syncSeasonMetaUi();
+          populateReplaceEpisodes();
+          return;
+        }
+        seasonSelect.disabled = false;
+        const options = show.seasons
+          .map(
+            (season) =>
+              `<option value="${season.seasonNumber}">${escapeHtml(
+                season.title || `Season ${season.seasonNumber}`,
+              )} · ${season.episodeCount} ep</option>`,
+          )
+          .join("");
+        seasonSelect.innerHTML =
+          `<option value="">Select season…</option>` +
+          options +
+          `<option value="__new__">+ Add another season…</option>`;
+        $("newSeasonRow").classList.add("hidden");
+        syncSeasonMetaUi();
+        populateReplaceEpisodes();
+      }
+
+      function syncSeasonMetaUi() {
+        const descInput = $("existingSeasonDescription");
+        const thumbInput = $("existingSeasonThumbnail");
+        const descLabel = $("existingSeasonDescLabel");
+        const thumbLabel = $("existingSeasonThumbLabel");
+        const thumbHint = $("existingSeasonThumbHint");
+        if (showMode !== "existing") return;
+
+        const value = $("seasonSelect").value;
+        const isNew = value === "__new__";
+        const season = selectedSeasonRecord();
+
+        if (isNew || !value) {
+          descLabel.textContent = "Season description";
+          descInput.placeholder = "Optional — shown on the active season in the app";
+          thumbLabel.textContent = isNew
+            ? "Season thumbnail (required)"
+            : "Season thumbnail";
+          thumbHint.textContent = isNew
+            ? "Required when creating a new season."
+            : "Pick a season first.";
+          return;
+        }
+
+        if (season?.hasDescription) {
+          descLabel.textContent = "Season description (optional update)";
+          descInput.placeholder = "Leave blank to keep the current description";
+        } else {
+          descLabel.textContent = "Season description";
+          descInput.placeholder = "Optional — shown on the active season in the app";
+        }
+
+        if (season?.hasPoster) {
+          thumbLabel.textContent = "Season thumbnail (optional update)";
+          thumbHint.textContent = "Already set — choose a new image only if you want to replace it.";
+        } else {
+          thumbLabel.textContent = "Season thumbnail (required)";
+          thumbHint.textContent = "This season has no thumbnail yet — required.";
+        }
+      }
+
+      function selectedSeasonRecord() {
+        const show = showCatalog.find((s) => s.id === $("showSelect").value);
+        if (!show) return null;
+        const n = selectedSeasonNumber();
+        return show.seasons.find((s) => s.seasonNumber === n) || null;
+      }
+
+      /**
+       * Highest episode number already taken in this season — includes library
+       * episodes plus anything still queued/uploading/transcoding so a second
+       * batch continues after the first (E08…E10, then E11…).
+       */
+      function highestReservedEpisode(showId, seasonNumber, seriesLabel) {
+        let max = 0;
+        const seasonCode = `S${String(seasonNumber).padStart(2, "0")}E`;
+        const codeRe = new RegExp(`${seasonCode}(\\d+)`, "i");
+
+        for (const row of localUploads) {
+          if (row.kind !== "episode") continue;
+          if (row.status !== "queued" && row.status !== "uploading") continue;
+          if (row.showId && showId && row.showId !== showId) continue;
+          if (Number.isInteger(row.seasonNumber) && row.seasonNumber !== seasonNumber) {
+            continue;
+          }
+          if (Number.isInteger(row.episodeNumber)) {
+            max = Math.max(max, row.episodeNumber);
+            continue;
+          }
+          const match = String(row.title || "").match(codeRe);
+          if (match) max = Math.max(max, Number(match[1]));
+        }
+
+        for (const job of serverJobs) {
+          if (job.kind !== "episode") continue;
+          if (job.status !== "queued" && job.status !== "running") continue;
+          const title = String(job.title || "");
+          const labelRoot = String(seriesLabel || "")
+            .split("(")[0]
+            .trim();
+          if (labelRoot && !title.includes(labelRoot)) continue;
+          const match = title.match(codeRe);
+          if (match) max = Math.max(max, Number(match[1]));
+        }
+
+        return max;
+      }
+
+      function populateReplaceEpisodes() {
+        const select = $("replaceEpisodeSelect");
+        const season = selectedSeasonRecord();
+        const episodes = season?.episodes || [];
+        select.innerHTML =
+          `<option value="">Select episode…</option>` +
+          episodes
+            .map(
+              (ep) =>
+                `<option value="${ep.episodeNumber}">E${String(ep.episodeNumber).padStart(2, "0")} · ${escapeHtml(ep.title)}</option>`,
+            )
+            .join("");
+      }
+
+      function syncEpisodeModeUi() {
+        const replace = $("episodeMode").value === "replace";
+        $("replaceEpisodeField").classList.toggle("hidden", !replace);
+        if (replace) populateReplaceEpisodes();
+      }
+
+      function selectedSeasonNumber() {
+        if (showMode === "new") {
+          return 1;
+        }
+        const value = $("seasonSelect").value;
+        if (value === "__new__") {
+          return Number($("newSeasonNumber").value);
+        }
+        return Number(value);
+      }
+
+      function uploadOne(url, form, onProgress, row) {
+        return new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          if (row) row.xhr = xhr;
+          xhr.open("POST", url);
+          xhr.setRequestHeader("authorization", `Bearer ${token()}`);
+          xhr.upload.onprogress = (event) => {
+            if (!event.lengthComputable) return;
+            onProgress(Math.round((event.loaded / event.total) * 100));
+          };
+          xhr.onload = () => {
+            let json = {};
+            try { json = JSON.parse(xhr.responseText); } catch {}
+            if (xhr.status >= 200 && xhr.status < 300) resolve(json);
+            else reject(new Error(json.message || `Upload failed (${xhr.status})`));
+          };
+          xhr.onerror = () => reject(new Error("Network error during upload."));
+          xhr.onabort = () => reject(new Error("cancelled"));
+          xhr.send(form);
+        });
+      }
+
+      async function uploadMovies() {
+        if (!movieFiles.length) {
+          $("movieMsg").textContent = "Choose a video file (required).";
+          $("movieMsg").className = "msg error";
+          return;
+        }
+        const thumbInput = $("movieThumbnail");
+        const thumbnail = thumbInput.files && thumbInput.files[0];
+        if (!thumbnail) {
+          $("movieMsg").textContent = "Choose a thumbnail image (required).";
+          $("movieMsg").className = "msg error";
+          return;
+        }
+        const file = movieFiles[0];
+        const title = $("movieTitle").value.trim();
+        if (!title) {
+          $("movieMsg").textContent = "Enter a movie name (required).";
+          $("movieMsg").className = "msg error";
+          return;
+        }
+        const year = $("movieYear").value.trim();
+        const description = $("movieDescription").value.trim();
+
+        $("movieUploadBtn").disabled = true;
+        $("movieMsg").textContent = "";
+        switchTab("jobs");
+        startJobPolling();
+        updateToast();
+
+        const localId = `up_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+        const row = {
+          id: localId,
+          kind: "movie",
+          title,
+          detail: file.name,
+          status: "queued",
+          progress: null,
+          updatedAt: new Date().toISOString(),
+        };
+        localUploads.unshift(row);
+        renderJobs();
+
+        // Handed off to Jobs — clear for the next movie.
+        $("movieTitle").value = "";
+        $("movieFiles").value = "";
+        movieFiles = [];
+        $("movieThumbnail").value = "";
+        $("movieYear").value = "";
+        $("movieDescription").value = "";
+        $("movieMsg").textContent = "";
+        $("movieUploadBtn").disabled = false;
+
+        row.status = "uploading";
+        row.progress = 0;
+        row.updatedAt = new Date().toISOString();
+        renderJobs();
+
+        const form = new FormData();
+        form.append("title", title);
+        if (year) form.append("year", year);
+        if (description) form.append("description", description);
+        form.append("thumbnail", thumbnail);
+        form.append("file", file);
+
+        try {
+          await uploadOne("/v1/admin/movies", form, (pct) => {
+            row.progress = pct;
+            row.updatedAt = new Date().toISOString();
+            renderJobs();
+          }, row);
+          if (row.status !== "cancelled") {
+            localUploads = localUploads.filter((u) => u.id !== row.id);
+          }
+        } catch (error) {
+          if (row.status === "cancelled" || error.message === "cancelled") {
+            row.status = "cancelled";
+            row.progress = null;
+            row.updatedAt = new Date().toISOString();
+          } else {
+            row.status = "failed";
+            row.progress = null;
+            row.detail = `${file.name} · ${error.message}`;
+            row.updatedAt = new Date().toISOString();
+          }
+        }
+        await refreshJobs();
+        renderJobs();
+        await refreshLibrary();
+      }
+
+      async function uploadEpisodes() {
+        if (!episodeFiles.length) {
+          $("episodeMsg").textContent = "Choose one or more episode videos first.";
+          $("episodeMsg").className = "msg error";
+          return;
+        }
+
+        const friendlyTitles = readEpisodeTitlesFromForm();
+        if (friendlyTitles.some((t) => !t.trim())) {
+          $("episodeMsg").textContent = "Every episode needs a name (e.g. Pilot).";
+          $("episodeMsg").className = "msg error";
+          return;
+        }
+
+        const assignedNumbers = readEpisodeNumbersFromForm();
+        if (
+          assignedNumbers.some((n) => !Number.isInteger(n) || n < 1) ||
+          assignedNumbers.length !== episodeFiles.length
+        ) {
+          $("episodeMsg").textContent = "Every file needs a valid episode number (1, 2, 3…).";
+          $("episodeMsg").className = "msg error";
+          return;
+        }
+
+        const seenInBatch = new Set();
+        for (const n of assignedNumbers) {
+          if (seenInBatch.has(n)) {
+            $("episodeMsg").textContent = `Duplicate episode #${n} in this batch — each file needs a unique number.`;
+            $("episodeMsg").className = "msg error";
+            return;
+          }
+          seenInBatch.add(n);
+        }
+
+        let showId = "";
+        let showTitle = "";
+        let showYear = "";
+        const seasonNumber = selectedSeasonNumber();
+
+        if (showMode === "existing") {
+          showId = $("showSelect").value;
+          if (!showId) {
+            $("episodeMsg").textContent = "Select an existing series.";
+            $("episodeMsg").className = "msg error";
+            return;
+          }
+          if (!Number.isInteger(seasonNumber) || seasonNumber < 0) {
+            $("episodeMsg").textContent = "Pick a season or enter a new season number.";
+            $("episodeMsg").className = "msg error";
+            return;
+          }
+        } else {
+          showTitle = $("showTitle").value.trim();
+          showYear = $("showYear").value.trim();
+          if (!showTitle) {
+            $("episodeMsg").textContent = "Enter a show title for the new series.";
+            $("episodeMsg").className = "msg error";
+            return;
+          }
+          if (!Number.isInteger(seasonNumber) || seasonNumber < 0) {
+            $("episodeMsg").textContent = "Enter a valid season number.";
+            $("episodeMsg").className = "msg error";
+            return;
+          }
+        }
+
+        const mode = showMode === "existing" ? $("episodeMode").value : "append";
+        const seasonRec = showMode === "existing" ? selectedSeasonRecord() : null;
+        const replaceEpisode = Number($("replaceEpisodeSelect").value);
+
+        if (mode === "replace") {
+          if (!Number.isInteger(replaceEpisode) || replaceEpisode < 1) {
+            $("episodeMsg").textContent = "Pick which episode to replace.";
+            $("episodeMsg").className = "msg error";
+            return;
+          }
+          if (episodeFiles.length !== 1) {
+            $("episodeMsg").textContent = "Replace mode uploads exactly one file.";
+            $("episodeMsg").className = "msg error";
+            return;
+          }
+          assignedNumbers[0] = replaceEpisode;
+          episodeNumbers[0] = replaceEpisode;
+          const code = `S${String(seasonNumber).padStart(2, "0")}E${String(replaceEpisode).padStart(2, "0")}`;
+          const ok = window.confirm(
+            `Replace ${code}?\n\nThis overwrites the existing episode video and metadata. Continue?`,
+          );
+          if (!ok) return;
+        } else if (showMode === "existing") {
+          const taken = existingEpisodeNumbersInSeason(seasonNumber);
+          const clashes = assignedNumbers.filter((n) => taken.has(n));
+          if (clashes.length) {
+            const list = clashes
+              .map((n) => `E${String(n).padStart(2, "0")}`)
+              .join(", ");
+            $("episodeMsg").textContent = `${list} already exist in this season — change the episode # or use Replace mode.`;
+            $("episodeMsg").className = "msg error";
+            return;
+          }
+        }
+
+        const seasonThumb =
+          showMode === "new"
+            ? $("newSeasonThumbnail").files && $("newSeasonThumbnail").files[0]
+            : $("existingSeasonThumbnail").files && $("existingSeasonThumbnail").files[0];
+        const seasonDescValue =
+          showMode === "new"
+            ? $("newSeasonDescription").value.trim()
+            : $("existingSeasonDescription").value.trim();
+        const creatingNewSeason =
+          showMode === "new" ||
+          $("seasonSelect").value === "__new__" ||
+          (showMode === "existing" && !seasonRec);
+        const needsSeasonThumb =
+          creatingNewSeason || (seasonRec && !seasonRec.hasPoster);
+        if (needsSeasonThumb && !seasonThumb) {
+          $("episodeMsg").textContent = "Choose a season thumbnail (required for new seasons).";
+          $("episodeMsg").className = "msg error";
+          return;
+        }
+
+        $("episodeUploadBtn").disabled = true;
+        $("episodeMsg").textContent = "";
+        switchTab("jobs");
+        startJobPolling();
+        updateToast();
+
+        let createdShowId = showId;
+        const seriesLabel = showTitle || ($("showSelect").selectedOptions[0]?.textContent?.trim() || "Series");
+
+        // Create series stub first so every file can upload in parallel (and both show in Jobs).
+        if (!createdShowId && showMode === "new") {
+          try {
+            const created = await api("/v1/admin/shows", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                title: showTitle,
+                year: showYear ? Number(showYear) : undefined,
+                seasonNumber,
+                seasonDescription: seasonDescValue || undefined,
+              }),
+            });
+            createdShowId = created.show.id;
+            await refreshShows();
+            $("showSelect").value = createdShowId;
+            setShowMode("existing");
+            populateSeasons();
+            if (Number.isInteger(seasonNumber)) {
+              $("seasonSelect").value = String(seasonNumber);
+            }
+          } catch (error) {
+            $("episodeMsg").textContent = error.message;
+            $("episodeMsg").className = "msg error";
+            $("episodeUploadBtn").disabled = false;
+            return;
+          }
+        }
+
+        // Use the episode # from the form (defaults to next after last). Filename SxxExx is only a hint for the title.
+        const episodeQueue = episodeFiles.map((file, index) => {
+          const season = seasonNumber;
+          const episode = assignedNumbers[index];
+          const title = friendlyTitles[index] || titleFromFilename(file.name);
+          const localId = `up_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+          const label = `${seriesLabel} · S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")} · ${title}${
+            mode === "replace" ? " (replace)" : ""
+          }`;
+          const row = {
+            id: localId,
+            kind: "episode",
+            title: label,
+            detail: file.name,
+            status: "queued",
+            progress: null,
+            updatedAt: new Date().toISOString(),
+            showId: createdShowId || null,
+            seasonNumber: season,
+            episodeNumber: episode,
+          };
+          localUploads.unshift(row);
+          return { file, row, season, episode, title };
+        });
+        renderJobs();
+
+        // Handed off to Jobs — clear video/thumb fields for the next batch.
+        $("episodeFiles").value = "";
+        episodeFiles = [];
+        episodeTitles = [];
+        episodeNumbers = [];
+        renderEpisodeList();
+        if ($("newSeasonThumbnail")) $("newSeasonThumbnail").value = "";
+        if ($("existingSeasonThumbnail")) $("existingSeasonThumbnail").value = "";
+        if ($("newSeasonDescription")) $("newSeasonDescription").value = "";
+        if ($("existingSeasonDescription")) $("existingSeasonDescription").value = "";
+        $("episodeMsg").textContent = "";
+        $("episodeUploadBtn").disabled = false;
+        syncSeasonMetaUi();
+
+        const thumbOwnerId = seasonThumb ? episodeQueue[0]?.row?.id : null;
+
+        await runUploadPool(episodeQueue, async (item) => {
+          const { file, row, season, episode, title } = item;
+          if (row.status === "cancelled") return;
+
+          row.status = "uploading";
+          row.progress = 0;
+          row.updatedAt = new Date().toISOString();
+          renderJobs();
+
+          const form = new FormData();
+          form.append("seasonNumber", String(season));
+          form.append("episodeNumber", String(episode));
+          if (title) form.append("episodeTitle", title);
+          if (createdShowId) form.append("showId", createdShowId);
+          if (seasonDescValue) form.append("seasonDescription", seasonDescValue);
+          if (seasonThumb && row.id === thumbOwnerId) {
+            form.append("thumbnail", seasonThumb);
+          }
+          form.append("file", file);
+
+          try {
+            await uploadOne(
+              "/v1/admin/episodes",
+              form,
+              (pct) => {
+                row.progress = pct;
+                row.updatedAt = new Date().toISOString();
+                renderJobs();
+              },
+              row,
+            );
+            if (row.status !== "cancelled") {
+              localUploads = localUploads.filter((u) => u.id !== row.id);
+            }
+          } catch (error) {
+            if (row.status === "cancelled" || error.message === "cancelled") {
+              row.status = "cancelled";
+              row.progress = null;
+              row.updatedAt = new Date().toISOString();
+            } else {
+              row.status = "failed";
+              row.progress = null;
+              row.detail = `${file.name} · ${error.message}`;
+              row.updatedAt = new Date().toISOString();
+            }
+          }
+          await refreshJobs();
+          renderJobs();
+        });
+
+        await refreshShows();
+        if (createdShowId) {
+          $("showSelect").value = createdShowId;
+          setShowMode("existing");
+          populateSeasons();
+        }
+
+        await refreshLibrary();
+        await refreshShows();
+      }
+
+      function statusPill(ready) {
+        return ready
+          ? '<span class="pill ready">Ready</span>'
+          : '<span class="pill queued">Not ready</span>';
+      }
+
+      function jobStatusPill(status) {
+        const cls =
+          status === "succeeded"
+            ? "succeeded"
+            : status === "failed"
+              ? "failed"
+              : status === "running" || status === "uploading"
+                ? "running"
+                : "queued";
+        return `<span class="pill ${cls}">${escapeHtml(status)}</span>`;
+      }
+
+      let showDetailCache = null;
+      let libraryActionBusy = false;
+      let activeSeasonIndex = 0;
+      let previewHls = null;
+
+      function stopPreview() {
+        const video = $("previewVideo");
+        if (previewHls) {
+          previewHls.destroy();
+          previewHls = null;
+        }
+        if (video) {
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
+        }
+        $("previewBox").classList.add("hidden");
+        $("previewCaption").textContent = "Preview";
+      }
+
+      function playPreview(kind, id, label) {
+        const video = $("previewVideo");
+        const src =
+          kind === "movie"
+            ? `/v1/media/movies/${encodeURIComponent(id)}/hls/master.m3u8`
+            : `/v1/media/episodes/${encodeURIComponent(id)}/hls/master.m3u8`;
+        const access = token();
+        stopPreview();
+        $("previewBox").classList.remove("hidden");
+        $("previewCaption").textContent = `Playing · ${label}`;
+
+        if (window.Hls && Hls.isSupported()) {
+          previewHls = new Hls({
+            xhrSetup: (xhr) => {
+              if (access) xhr.setRequestHeader("Authorization", `Bearer ${access}`);
+            },
+          });
+          previewHls.loadSource(src);
+          previewHls.attachMedia(video);
+          previewHls.on(Hls.Events.MANIFEST_PARSED, () => {
+            void video.play().catch(() => {});
+          });
+          previewHls.on(Hls.Events.ERROR, (_event, data) => {
+            if (data?.fatal) {
+              $("previewCaption").textContent = `Couldn’t play · ${label}`;
+            }
+          });
+        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          video.src = `${src}?access_token=${encodeURIComponent(access || "")}`;
+          void video.play().catch(() => {});
+        } else {
+          $("previewCaption").textContent = "HLS playback isn’t supported in this browser.";
+        }
+
+        $("previewBox").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      function closeDetailModal() {
+        stopPreview();
+        showDetailCache = null;
+        activeSeasonIndex = 0;
+        $("detailModal").classList.add("hidden");
+        $("detailBody").innerHTML = "Loading…";
+      }
+
+      function openDetailModal(kindLabel, title) {
+        stopPreview();
+        $("detailKind").textContent = kindLabel;
+        $("detailTitle").textContent = title;
+        $("detailBody").innerHTML = '<span class="muted">Loading…</span>';
+        $("detailModal").classList.remove("hidden");
+      }
+
+      function renderShowSeasonPanel() {
+        if (!showDetailCache) return;
+        const s = showDetailCache.show;
+        const seasons = s.seasons || [];
+        const season = seasons[activeSeasonIndex];
+        const jobs = showDetailCache.jobs || [];
+
+        const tabs = seasons
+          .map(
+            (seasonItem, index) =>
+              `<button type="button" class="season-tab${
+                index === activeSeasonIndex ? " active" : ""
+              }" data-season-index="${index}">
+                ${escapeHtml(seasonItem.title || `Season ${seasonItem.seasonNumber}`)}
+                <span class="muted"> · ${seasonItem.readyCount}/${seasonItem.episodeCount}</span>
+              </button>`,
+          )
+          .join("");
+
+        let seasonBody = '<p class="muted">No seasons yet — upload episodes to create them.</p>';
+        if (season) {
+          const epRows = (season.episodes || [])
+            .map((ep) => {
+              const code = `S${String(season.seasonNumber).padStart(2, "0")}E${String(
+                ep.episodeNumber,
+              ).padStart(2, "0")}`;
+              const playBtn = ep.ready
+                ? `<button type="button" class="btn-play" data-play-kind="episode" data-play-id="${escapeHtml(
+                    ep.id,
+                  )}" data-play-label="${escapeHtml(`${code} · ${ep.title}`)}">Play</button>`
+                : `<button type="button" class="btn-play" disabled>Play</button>`;
+              const removeVideoBtn = ep.ready
+                ? `<button type="button" class="btn-danger-ghost compact" data-action="purge-episode" data-id="${escapeHtml(
+                    ep.id,
+                  )}" data-label="${escapeHtml(code)}">Remove video</button>`
+                : "";
+              const reuploadBtn = ep.ready
+                ? `<button type="button" class="btn-cdn compact" data-action="publish-episode" data-id="${escapeHtml(
+                    ep.id,
+                  )}" data-label="${escapeHtml(code)}">Reupload CDN</button>`
+                : "";
+              return `<div class="ep-row">
+                <div>
+                  <div><strong>${code}</strong> · ${escapeHtml(ep.title)}</div>
+                  <div class="muted">${
+                    ep.runtimeSeconds
+                      ? Math.round(ep.runtimeSeconds / 60) + "m"
+                      : "Runtime pending"
+                  }</div>
+                </div>
+                <div class="ep-actions">
+                  ${statusPill(ep.ready)}
+                  ${playBtn}
+                  ${reuploadBtn}
+                  ${removeVideoBtn}
+                </div>
+              </div>`;
+            })
+            .join("");
+
+          seasonBody = `
+            <div class="detail-section" style="border-top:0;padding-top:8px;margin-top:8px">
+              <h3>${escapeHtml(season.title || `Season ${season.seasonNumber}`)}
+                <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">
+                  · ${season.readyCount}/${season.episodeCount} ready
+                  · ${season.hasPoster ? "poster set" : "no season poster"}
+                </span>
+              </h3>
+              ${
+                season.description
+                  ? `<p class="muted" style="margin:0 0 10px">${escapeHtml(season.description)}</p>`
+                  : ""
+              }
+              ${
+                season.readyCount > 0
+                  ? `<div style="margin:0 0 12px">
+                      <button type="button" class="btn-cdn" data-action="publish-season" data-id="${escapeHtml(
+                        season.id,
+                      )}" data-label="${escapeHtml(
+                        season.title || `Season ${season.seasonNumber}`,
+                      )}">Reupload season to CDN (${season.readyCount})</button>
+                    </div>`
+                  : ""
+              }
+              ${
+                epRows ||
+                '<p class="muted" style="margin:0">No episodes in this season yet.</p>'
+              }
+              <div class="detail-danger">
+                <p class="hint">Delete season removes this season, its episodes, and all connected media.</p>
+                <button type="button" class="btn-danger-ghost" data-action="delete-season" data-id="${escapeHtml(
+                  season.id,
+                )}" data-label="${escapeHtml(
+                  season.title || `Season ${season.seasonNumber}`,
+                )}">Delete season</button>
+              </div>
+            </div>
+          `;
+        }
+
+        $("detailBody").innerHTML = `
+          <div class="detail-meta">
+            <span>${statusPill(s.ready)}</span>
+            <span>${s.year ?? "No year"}</span>
+            <span>${s.seasonCount} season${s.seasonCount === 1 ? "" : "s"}</span>
+            <span>${s.episodeCount} episode${s.episodeCount === 1 ? "" : "s"}</span>
+          </div>
+          ${tabs ? `<div class="season-tabs">${tabs}</div>` : ""}
+          ${seasonBody}
+          <div class="detail-section">
+            <h3>Related jobs</h3>
+            ${
+              jobs.length
+                ? jobs
+                    .map(
+                      (j) => `<div class="ep-row">
+                        <div>
+                          <div>${escapeHtml(j.title)}</div>
+                          <div class="muted">${escapeHtml(j.detail || "")}${
+                            j.error ? " · " + escapeHtml(j.error) : ""
+                          }</div>
+                        </div>
+                        ${jobStatusPill(j.status)}
+                      </div>`,
+                    )
+                    .join("")
+                : '<p class="muted" style="margin:0">No recent episode jobs matched this show.</p>'
+            }
+          </div>
+          <div class="detail-danger">
+            <p class="hint">Delete series removes the show, every season, every episode, and all connected media.</p>
+            <button type="button" class="btn-danger-ghost" data-action="delete-show" data-id="${escapeHtml(
+              s.id,
+            )}" data-label="${escapeHtml(s.title)}">Delete series</button>
+          </div>
+        `;
+      }
+
+      async function openMovieDetail(id, title) {
+        openDetailModal("Movie", title);
+        try {
+          const data = await api(`/v1/admin/library/movies/${encodeURIComponent(id)}`);
+          const m = data.movie;
+          const jobs = data.jobs || [];
+          const playBtn = m.ready
+            ? `<button type="button" class="btn-play" data-play-kind="movie" data-play-id="${escapeHtml(
+                m.id,
+              )}" data-play-label="${escapeHtml(m.title)}">Play movie</button>`
+            : `<button type="button" class="btn-play" disabled>Play movie</button>`;
+          const removeVideoBtn = m.ready
+            ? `<button type="button" class="btn-danger-ghost" data-action="purge-movie" data-id="${escapeHtml(
+                m.id,
+              )}" data-label="${escapeHtml(m.title)}">Remove video</button>`
+            : "";
+          const reuploadBtn = m.ready
+            ? `<button type="button" class="btn-cdn" data-action="publish-movie" data-id="${escapeHtml(
+                m.id,
+              )}" data-label="${escapeHtml(m.title)}">Reupload to CDN</button>`
+            : "";
+          $("detailBody").innerHTML = `
+            <div class="detail-meta">
+              <span>${statusPill(m.ready)}</span>
+              <span>${m.year ?? "No year"}</span>
+              <span>${m.hasPoster ? "Poster set" : "No poster"}</span>
+              <span>${m.hasDescription ? "Has description" : "No description"}</span>
+              ${playBtn}
+              ${reuploadBtn}
+            </div>
+            <p class="muted" style="margin:0 0 8px">${
+              m.description
+                ? escapeHtml(m.description)
+                : "No description yet."
+            }</p>
+            <div class="detail-section">
+              <h3>Status</h3>
+              <p class="muted" style="margin:0">
+                ${
+                  m.ready
+                    ? "This movie is encoded and ready to stream. Use Play to verify the file."
+                    : "Not ready yet — still processing, failed, or missing a finished encode. Check Jobs."
+                }
+              </p>
+            </div>
+            <div class="detail-section">
+              <h3>Related jobs</h3>
+              ${
+                jobs.length
+                  ? jobs
+                      .map(
+                        (j) => `<div class="ep-row">
+                          <div>
+                            <div>${escapeHtml(j.title)}</div>
+                            <div class="muted">${escapeHtml(j.detail || "")}${
+                              j.error ? " · " + escapeHtml(j.error) : ""
+                            }</div>
+                          </div>
+                          ${jobStatusPill(j.status)}
+                        </div>`,
+                      )
+                      .join("")
+                  : '<p class="muted" style="margin:0">No recent jobs matched this title.</p>'
+              }
+            </div>
+            <div class="detail-danger">
+              <p class="hint">Remove video keeps the title and poster so you can re-upload later. Delete movie removes everything.</p>
+              ${removeVideoBtn}
+              <button type="button" class="btn-danger-ghost" data-action="delete-movie" data-id="${escapeHtml(
+                m.id,
+              )}" data-label="${escapeHtml(m.title)}">Delete movie</button>
+            </div>
+          `;
+        } catch (err) {
+          $("detailBody").innerHTML = `<p class="msg error">${escapeHtml(
+            err.message || "Couldn’t load movie.",
+          )}</p>`;
+        }
+      }
+
+      async function openShowDetail(id, title) {
+        openDetailModal("Show", title);
+        try {
+          const data = await api(`/v1/admin/library/shows/${encodeURIComponent(id)}`);
+          showDetailCache = data;
+          activeSeasonIndex = 0;
+          renderShowSeasonPanel();
+        } catch (err) {
+          showDetailCache = null;
+          $("detailBody").innerHTML = `<p class="msg error">${escapeHtml(
+            err.message || "Couldn’t load show.",
+          )}</p>`;
+        }
+      }
+
+      async function runLibraryAction(action, id, label) {
+        if (libraryActionBusy) return;
+
+        if (
+          action === "publish-movie" ||
+          action === "publish-episode" ||
+          action === "publish-season"
+        ) {
+          const confirms = {
+            "publish-movie": `Reupload “${label}” to Cloudflare CDN (R2)?`,
+            "publish-episode": `Reupload ${label} to Cloudflare CDN (R2)?`,
+            "publish-season": `Reupload all ready episodes in “${label}” to CDN?`,
+          };
+          if (!confirm(confirms[action])) return;
+          libraryActionBusy = true;
+          try {
+            if (action === "publish-movie") {
+              await api(`/v1/admin/library/movies/${encodeURIComponent(id)}/publish-r2`, {
+                method: "POST",
+              });
+            } else if (action === "publish-episode") {
+              await api(`/v1/admin/library/episodes/${encodeURIComponent(id)}/publish-r2`, {
+                method: "POST",
+              });
+            } else {
+              const data = await api(
+                `/v1/admin/library/seasons/${encodeURIComponent(id)}/publish-r2`,
+                { method: "POST" },
+              );
+              alert(`Queued ${data.queued || 0} CDN upload job(s). Watch the Jobs tab.`);
+            }
+            switchTab("jobs");
+            await refreshJobs();
+            startJobPoll();
+          } catch (error) {
+            alert(error.message || "CDN reupload failed to start.");
+          } finally {
+            libraryActionBusy = false;
+          }
+          return;
+        }
+
+        const confirms = {
+          "purge-movie": `Remove the video for “${label}”? Title and poster stay so you can re-upload later.`,
+          "delete-movie": `Delete movie “${label}” and everything connected? This cannot be undone.`,
+          "purge-episode": `Remove the video for ${label}? The episode slot stays for replace upload.`,
+          "delete-season": `Delete “${label}” and all of its episodes and media? This cannot be undone.`,
+          "delete-show": `Delete series “${label}” and every season/episode? This cannot be undone.`,
+        };
+        const message = confirms[action];
+        if (!message || !confirm(message)) return;
+
+        libraryActionBusy = true;
+        try {
+          if (action === "purge-movie") {
+            await api(`/v1/admin/movies/${encodeURIComponent(id)}/media`, {
+              method: "DELETE",
+            });
+            await refreshLibrary();
+            await openMovieDetail(id, label);
+            return;
+          }
+          if (action === "delete-movie") {
+            await api(`/v1/admin/movies/${encodeURIComponent(id)}`, {
+              method: "DELETE",
+            });
+            closeDetailModal();
+            await refreshLibrary();
+            return;
+          }
+          if (action === "purge-episode") {
+            await api(`/v1/admin/episodes/${encodeURIComponent(id)}/media`, {
+              method: "DELETE",
+            });
+            const showId = showDetailCache?.show?.id;
+            const showTitle = showDetailCache?.show?.title || "Show";
+            const keepSeason = activeSeasonIndex;
+            await refreshLibrary();
+            if (showId) {
+              const data = await api(
+                `/v1/admin/library/shows/${encodeURIComponent(showId)}`,
+              );
+              showDetailCache = data;
+              activeSeasonIndex = Math.min(
+                keepSeason,
+                Math.max(0, (data.show.seasons || []).length - 1),
+              );
+              $("detailTitle").textContent = data.show.title || showTitle;
+              renderShowSeasonPanel();
+            }
+            return;
+          }
+          if (action === "delete-season") {
+            const result = await api(`/v1/admin/seasons/${encodeURIComponent(id)}`, {
+              method: "DELETE",
+            });
+            await refreshLibrary();
+            await refreshShows();
+            const showId = result.showId || showDetailCache?.show?.id;
+            if (!showId) {
+              closeDetailModal();
+              return;
+            }
+            const data = await api(
+              `/v1/admin/library/shows/${encodeURIComponent(showId)}`,
+            );
+            showDetailCache = data;
+            activeSeasonIndex = 0;
+            $("detailTitle").textContent = data.show.title;
+            renderShowSeasonPanel();
+            return;
+          }
+          if (action === "delete-show") {
+            await api(`/v1/admin/shows/${encodeURIComponent(id)}`, {
+              method: "DELETE",
+            });
+            closeDetailModal();
+            await refreshLibrary();
+            await refreshShows();
+          }
+        } catch (err) {
+          alert(err.message || "Library action failed.");
+        } finally {
+          libraryActionBusy = false;
+        }
+      }
+
+      async function refreshLibrary() {
+        const data = await api("/v1/admin/library");
+        $("moviesBody").innerHTML = data.movies
+          .map(
+            (m) => `<tr class="click-row" data-kind="movie" data-id="${escapeHtml(m.id)}" data-title="${escapeHtml(m.title)}">
+              <td>${escapeHtml(m.title)}</td>
+              <td class="muted">${m.year ?? "—"}</td>
+              <td>${statusPill(m.ready)}</td>
+            </tr>`,
+          )
+          .join("") || `<tr><td colspan="3" class="muted">No movies yet.</td></tr>`;
+
+        $("showsBody").innerHTML = data.shows
+          .map(
+            (s) => `<tr class="click-row" data-kind="show" data-id="${escapeHtml(s.id)}" data-title="${escapeHtml(s.title)}">
+              <td>${escapeHtml(s.title)}</td>
+              <td class="muted">${s.seasonCount}</td>
+              <td class="muted">${s.episodeCount}</td>
+              <td>${statusPill(s.ready)}</td>
+            </tr>`,
+          )
+          .join("") || `<tr><td colspan="4" class="muted">No shows yet.</td></tr>`;
+
+        if (data.jobs) {
+          serverJobs = data.jobs;
+          renderJobs();
+        }
+      }
+
+      $("movieFiles").addEventListener("change", () => {
+        movieFiles = [...($("movieFiles").files || [])].slice(0, 1);
+        if (movieFiles.length) {
+          $("movieTitle").value = titleFromFilename(movieFiles[0].name);
+        }
+      });
+      $("episodeFiles").addEventListener("change", () => {
+        episodeFiles = [...($("episodeFiles").files || [])];
+        episodeTitles = episodeFiles.map((file) => titleFromFilename(file.name));
+        assignDefaultEpisodeNumbers();
+        renderEpisodeList();
+      });
+
+      $("showSelect").addEventListener("change", () => {
+        populateSeasons();
+        if (episodeFiles.length) {
+          assignDefaultEpisodeNumbers();
+          renderEpisodeList();
+        }
+      });
+      $("seasonSelect").addEventListener("change", () => {
+        $("newSeasonRow").classList.toggle("hidden", $("seasonSelect").value !== "__new__");
+        syncSeasonMetaUi();
+        populateReplaceEpisodes();
+        if (episodeFiles.length) {
+          assignDefaultEpisodeNumbers();
+          renderEpisodeList();
+        }
+      });
+      $("episodeMode").addEventListener("change", () => {
+        syncEpisodeModeUi();
+        if (episodeFiles.length) {
+          assignDefaultEpisodeNumbers();
+          renderEpisodeList();
+        }
+      });
+      $("replaceEpisodeSelect").addEventListener("change", () => {
+        if (episodeFiles.length && $("episodeMode").value === "replace") {
+          assignDefaultEpisodeNumbers();
+          renderEpisodeList();
+        }
+      });
+      $("newSeasonNumber").addEventListener("input", () => {
+        if (episodeFiles.length) {
+          assignDefaultEpisodeNumbers();
+          renderEpisodeList();
+        }
+      });
+      $("modeExisting").addEventListener("click", () => {
+        setShowMode("existing");
+        syncEpisodeModeUi();
+        if (episodeFiles.length) {
+          assignDefaultEpisodeNumbers();
+          renderEpisodeList();
+        }
+      });
+      $("modeNew").addEventListener("click", () => {
+        setShowMode("new");
+        if (episodeFiles.length) {
+          assignDefaultEpisodeNumbers();
+          renderEpisodeList();
+        }
+      });
+      $("loginBtn").addEventListener("click", () => void login());
+      $("logoutBtn").addEventListener("click", () => {
+        clearSession();
+        showLogin();
+      });
+      $("movieUploadBtn").addEventListener("click", () => void uploadMovies());
+      $("episodeUploadBtn").addEventListener("click", () => void uploadEpisodes());
+      $("jobsTabProgress").addEventListener("click", () => setJobsView("progress"));
+      $("jobsTabFinished").addEventListener("click", () => setJobsView("finished"));
+      $("jobsBody").addEventListener("click", (event) => {
+        const uploadBtn = event.target.closest("[data-cancel-upload]");
+        if (uploadBtn) {
+          cancelLocalUpload(uploadBtn.dataset.cancelUpload);
+          return;
+        }
+        const encodeBtn = event.target.closest("[data-cancel-encode]");
+        if (encodeBtn) {
+          void cancelEncodeJob(encodeBtn.dataset.cancelEncode);
+        }
+      });
+      $("detailCloseBtn").addEventListener("click", closeDetailModal);
+      $("detailModal").addEventListener("click", (event) => {
+        if (event.target === $("detailModal")) closeDetailModal();
+      });
+      $("detailBody").addEventListener("click", (event) => {
+        const tab = event.target.closest(".season-tab");
+        if (tab && showDetailCache) {
+          activeSeasonIndex = Number(tab.dataset.seasonIndex || 0);
+          renderShowSeasonPanel();
+          return;
+        }
+        const actionBtn = event.target.closest("[data-action]");
+        if (actionBtn) {
+          void runLibraryAction(
+            actionBtn.dataset.action,
+            actionBtn.dataset.id,
+            actionBtn.dataset.label || "item",
+          );
+          return;
+        }
+        const play = event.target.closest("[data-play-kind]");
+        if (play && !play.disabled) {
+          playPreview(
+            play.dataset.playKind,
+            play.dataset.playId,
+            play.dataset.playLabel || "Preview",
+          );
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !$("detailModal").classList.contains("hidden")) {
+          closeDetailModal();
+        }
+      });
+      $("tab-library").addEventListener("click", (event) => {
+        const row = event.target.closest("tr.click-row");
+        if (!row) return;
+        const id = row.dataset.id;
+        const title = row.dataset.title || "Untitled";
+        if (row.dataset.kind === "movie") void openMovieDetail(id, title);
+        if (row.dataset.kind === "show") void openShowDetail(id, title);
+      });
+      document.querySelectorAll(".tab").forEach((btn) => {
+        btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+      });
+
+      (async function boot() {
+        const saved = token();
+        if (!saved) return;
+        try {
+          const me = await api("/v1/me");
+          if (me.role !== "owner") {
+            clearSession();
+            return;
+          }
+          setSession(saved, me);
+          showApp(me);
+          await refreshLibrary();
+          await refreshShows();
+          await refreshJobs();
+          if (serverJobs.some((j) => j.status === "queued" || j.status === "running")) {
+            startJobPolling();
+          }
+        } catch {
+          clearSession();
+        }
+      })();
+    </script>
+  </body>
+</html>

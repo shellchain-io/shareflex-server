@@ -1,0 +1,276 @@
+// ShareFlex Prisma schema — SQLite metadata only (no movie/episode binaries).
+// Prisma 7: connection URL lives in prisma.config.ts
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  role         String   @default("viewer") // owner | viewer
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  devices           Device[]
+  sessions          Session[]
+  progress          PlaybackProgress[]
+  history           WatchHistory[]
+  favorites         Favorite[]
+  episodeProgress   EpisodePlaybackProgress[]
+  episodeHistory    EpisodeWatchHistory[]
+  showFavorites     ShowFavorite[]
+}
+
+model Device {
+  id         String   @id @default(cuid())
+  userId     String
+  name       String
+  platform   String // ios | macos | unknown
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  @@index([userId])
+}
+
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  deviceId         String?
+  refreshTokenHash String
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([refreshTokenHash])
+}
+
+model Movie {
+  id             String   @id @default(cuid())
+  title          String
+  description    String   @default("")
+  year           Int?
+  runtimeSeconds Int?
+  posterPath     String?
+  contentVersion String   @default("1")
+  ready          Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  assets    MovieAsset[]
+  subtitles SubtitleTrack[]
+  progress  PlaybackProgress[]
+  history   WatchHistory[]
+  favorites Favorite[]
+}
+
+model MovieAsset {
+  id           String   @id @default(cuid())
+  movieId      String
+  kind         String // master | video | audio | poster
+  qualityLabel String? // 1080p | 720p | 480p | null for master/poster
+  relativePath String
+  mimeType     String?
+  createdAt    DateTime @default(now())
+
+  movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@index([movieId])
+}
+
+model SubtitleTrack {
+  id           String   @id @default(cuid())
+  movieId      String
+  language     String
+  label        String
+  relativePath String
+  createdAt    DateTime @default(now())
+
+  movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@index([movieId])
+}
+
+model PlaybackProgress {
+  id              String   @id @default(cuid())
+  userId          String
+  movieId         String
+  positionSeconds Float
+  durationSeconds Float
+  percentComplete Float
+  completed       Boolean  @default(false)
+  lastWatchedAt   DateTime @default(now())
+  revision        Int      @default(1)
+  updatedAt       DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, movieId])
+  @@index([userId, lastWatchedAt])
+}
+
+model WatchHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  movieId   String
+  watchedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@index([userId, watchedAt])
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  movieId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, movieId])
+  @@index([userId])
+}
+
+model Show {
+  id             String   @id @default(cuid())
+  title          String
+  description    String   @default("")
+  year           Int?
+  posterPath     String?
+  contentVersion String   @default("1")
+  ready          Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  seasons   Season[]
+  favorites ShowFavorite[]
+}
+
+model Season {
+  id           String   @id @default(cuid())
+  showId       String
+  seasonNumber Int
+  title        String   @default("")
+  description  String   @default("")
+  posterPath   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  show     Show      @relation(fields: [showId], references: [id], onDelete: Cascade)
+  episodes Episode[]
+
+  @@unique([showId, seasonNumber])
+  @@index([showId])
+}
+
+model Episode {
+  id             String   @id @default(cuid())
+  seasonId       String
+  episodeNumber  Int
+  title          String
+  description    String   @default("")
+  runtimeSeconds Int?
+  posterPath     String?
+  contentVersion String   @default("1")
+  ready          Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  season    Season                    @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  assets    EpisodeAsset[]
+  subtitles EpisodeSubtitleTrack[]
+  progress  EpisodePlaybackProgress[]
+  history   EpisodeWatchHistory[]
+
+  @@unique([seasonId, episodeNumber])
+  @@index([seasonId])
+}
+
+model EpisodeAsset {
+  id           String   @id @default(cuid())
+  episodeId    String
+  kind         String // master | video | audio | poster
+  qualityLabel String?
+  relativePath String
+  mimeType     String?
+  createdAt    DateTime @default(now())
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@index([episodeId])
+}
+
+model EpisodeSubtitleTrack {
+  id           String   @id @default(cuid())
+  episodeId    String
+  language     String
+  label        String
+  relativePath String
+  createdAt    DateTime @default(now())
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@index([episodeId])
+}
+
+model EpisodePlaybackProgress {
+  id              String   @id @default(cuid())
+  userId          String
+  episodeId       String
+  positionSeconds Float
+  durationSeconds Float
+  percentComplete Float
+  completed       Boolean  @default(false)
+  lastWatchedAt   DateTime @default(now())
+  revision        Int      @default(1)
+  updatedAt       DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, episodeId])
+  @@index([userId, lastWatchedAt])
+}
+
+model EpisodeWatchHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  episodeId String
+  watchedAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@index([userId, watchedAt])
+}
+
+model ShowFavorite {
+  id        String   @id @default(cuid())
+  userId    String
+  showId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  show Show @relation(fields: [showId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, showId])
+  @@index([userId])
+}
