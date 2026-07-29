@@ -56,23 +56,44 @@ npm run db:seed
 npm run build
 ```
 
-3. systemd unit (example):
+3. **systemd** (best — survives SSH close + VM reboot). On the VM:
 
-```ini
+```bash
+# stop any manual npm start first (Ctrl+C)
+which node   # note path, usually /usr/bin/node
+
+sudo tee /etc/systemd/system/shareflex.service >/dev/null <<'EOF'
 [Unit]
 Description=ShareFlex cloud API
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/YOU/shareflex-cloud/Code/server-cloud
-ExecStart=/usr/bin/node dist/index.js
-Restart=always
+User=bjbjpedradduxanea
+WorkingDirectory=/home/bjbjpedradduxanea/shareflex-server
 Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/src/index.js
+Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now shareflex
+sudo systemctl status shareflex --no-pager
+curl -sS http://127.0.0.1:8787/health
 ```
+
+Useful later:
+```bash
+sudo systemctl restart shareflex   # after git pull + npm run build
+sudo journalctl -u shareflex -f    # logs
+```
+
+**Note:** If you **Suspend** the VM in Google Cloud, nothing runs until you **Start** it again. systemd starts ShareFlex automatically on boot after Start/reboot — not while suspended.
 
 4. Firewall: allow **tcp:8787** (already done if you created `allow-shareflex-8787`).
 5. Health: `curl http://34.47.238.195:8787/health`

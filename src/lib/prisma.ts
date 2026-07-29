@@ -1,12 +1,23 @@
+import { mkdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaClient } from "../../generated/prisma/client.js";
 
-export const serverRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../..",
-);
+/** Works for both `tsx src/…` and `node dist/src/…`. */
+export function resolveServerRoot(): string {
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 6; i++) {
+    if (existsSync(path.join(dir, "package.json"))) {
+      return dir;
+    }
+    dir = path.dirname(dir);
+  }
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+}
+
+export const serverRoot = resolveServerRoot();
 
 /**
  * Resolve SQLite file: URLs against the server package root so Prisma migrate
@@ -22,6 +33,8 @@ export function resolveSqliteFileUrl(databaseUrl: string): string {
   const absolutePath = path.isAbsolute(rawPath)
     ? rawPath
     : path.resolve(serverRoot, rawPath);
+
+  mkdirSync(path.dirname(absolutePath), { recursive: true });
 
   return `file:${absolutePath}`;
 }
