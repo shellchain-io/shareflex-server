@@ -1783,9 +1783,13 @@
         populateSeasons();
       }
 
-      function populateSeasons() {
+      function populateSeasons(preferredSeason) {
         const show = showCatalog.find((s) => s.id === $("showSelect").value);
         const seasonSelect = $("seasonSelect");
+        const previous =
+          preferredSeason !== undefined && preferredSeason !== null
+            ? String(preferredSeason)
+            : seasonSelect.value;
         if (!show) {
           seasonSelect.disabled = true;
           seasonSelect.innerHTML = `<option value="">Select season…</option>`;
@@ -1807,7 +1811,15 @@
           `<option value="">Select season…</option>` +
           options +
           `<option value="__new__">+ Add another season…</option>`;
-        $("newSeasonRow").classList.add("hidden");
+        if (previous === "__new__") {
+          seasonSelect.value = "__new__";
+        } else if (
+          previous &&
+          [...seasonSelect.options].some((opt) => opt.value === previous)
+        ) {
+          seasonSelect.value = previous;
+        }
+        $("newSeasonRow").classList.toggle("hidden", seasonSelect.value !== "__new__");
         syncSeasonMetaUi();
         populateReplaceEpisodes();
       }
@@ -2081,6 +2093,10 @@
         let showId = "";
         let showTitle = "";
         let showYear = "";
+        const previousShowId = $("showSelect").value;
+        const previousSeasonValue = $("seasonSelect").value;
+        const creatingNewSeasonIntent =
+          showMode === "new" || previousSeasonValue === "__new__";
         const seasonNumber = selectedSeasonNumber();
 
         // Catalog may be stale after deletes/sync — refresh before upload.
@@ -2088,6 +2104,11 @@
           $("showSelect")?.selectedOptions?.[0]?.textContent?.trim() || "";
         try {
           await refreshShows();
+          // refreshShows rebuilds dropdowns — put the user's picks back.
+          if (previousShowId && showCatalog.some((s) => s.id === previousShowId)) {
+            $("showSelect").value = previousShowId;
+            populateSeasons(previousSeasonValue);
+          }
         } catch (error) {
           $("episodeMsg").textContent =
             error.message || "Couldn’t refresh series list. Try again.";
@@ -2096,7 +2117,7 @@
         }
 
         if (showMode === "existing") {
-          showId = $("showSelect").value;
+          showId = previousShowId || $("showSelect").value;
           if (!showId || !showCatalog.some((s) => s.id === showId)) {
             $("episodeMsg").textContent =
               "That series is gone from this Mac (deleted or synced away). Switch to New series and enter the title again, or pick another series.";
@@ -2108,6 +2129,8 @@
             }
             return;
           }
+          $("showSelect").value = showId;
+          populateSeasons(previousSeasonValue);
           if (!Number.isInteger(seasonNumber) || seasonNumber < 0) {
             $("episodeMsg").textContent = "Pick a season or enter a new season number.";
             $("episodeMsg").className = "msg error";
@@ -2129,7 +2152,12 @@
         }
 
         const mode = showMode === "existing" ? $("episodeMode").value : "append";
-        const seasonRec = showMode === "existing" ? selectedSeasonRecord() : null;
+        const seasonRec =
+          showMode === "existing"
+            ? showCatalog
+                .find((s) => s.id === showId)
+                ?.seasons.find((s) => s.seasonNumber === seasonNumber) || null
+            : null;
         const replaceEpisode = Number($("replaceEpisodeSelect").value);
 
         if (mode === "replace") {
@@ -2172,13 +2200,13 @@
             ? $("newSeasonDescription").value.trim()
             : $("existingSeasonDescription").value.trim();
         const creatingNewSeason =
-          showMode === "new" ||
-          $("seasonSelect").value === "__new__" ||
-          (showMode === "existing" && !seasonRec);
+          creatingNewSeasonIntent || (showMode === "existing" && !seasonRec);
         const needsSeasonThumb =
           creatingNewSeason || (seasonRec && !seasonRec.hasPoster);
         if (needsSeasonThumb && !seasonThumb) {
-          $("episodeMsg").textContent = "Choose a season thumbnail (required for new seasons).";
+          $("episodeMsg").textContent = creatingNewSeason
+            ? "Choose a season thumbnail (required for new seasons)."
+            : "This season has no thumbnail yet — choose one before uploading.";
           $("episodeMsg").className = "msg error";
           return;
         }
@@ -2318,11 +2346,19 @@
         if (createdShowId) {
           $("showSelect").value = createdShowId;
           setShowMode("existing");
-          populateSeasons();
+          populateSeasons(
+            Number.isInteger(seasonNumber) ? String(seasonNumber) : previousSeasonValue,
+          );
         }
 
         await refreshLibrary();
         await refreshShows();
+        if (createdShowId) {
+          $("showSelect").value = createdShowId;
+          populateSeasons(
+            Number.isInteger(seasonNumber) ? String(seasonNumber) : previousSeasonValue,
+          );
+        }
       }
 
       function statusPill(ready) {

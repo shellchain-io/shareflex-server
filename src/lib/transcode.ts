@@ -77,7 +77,7 @@ async function withTranscodeLock<T>(
 
     if (holderAlive) {
       throw new Error(
-        `Another ShareFlex transcode is already running (lock: ${lockPath}). Run one job at a time.`,
+        `This title is already being encoded (lock: ${lockPath}).`,
       );
     }
 
@@ -88,7 +88,7 @@ async function withTranscodeLock<T>(
       const retryCode = (retryError as NodeJS.ErrnoException).code;
       if (retryCode === "EEXIST") {
         throw new Error(
-          `Another ShareFlex transcode is already running (lock: ${lockPath}). Run one job at a time.`,
+          `This title is already being encoded (lock: ${lockPath}).`,
         );
       }
       throw retryError;
@@ -353,7 +353,8 @@ export async function transcodeMovie(options: {
     .trim();
   const title = options.title ?? (derivedTitle || "Untitled");
 
-  const lockPath = path.join(options.mediaRoot, "temp", "transcode.lock");
+  // Per-title lock only — parallel encodes are allowed (job queue sets the batch size).
+  const lockPath = path.join(options.mediaRoot, "temp", `transcode-${id}.lock`);
   const stagingDir = path.join(options.mediaRoot, "temp", `job-${id}`);
   const finalDir = path.join(options.mediaRoot, kind, id);
 
