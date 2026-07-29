@@ -470,6 +470,7 @@ export async function syncLibraryFromCloud(
   for (const show of shows) {
     const episodes = show.seasons.flatMap((s) => s.episodes);
     const hadPublished = episodes.some((ep) => ep.cloudRegistered || ep.cdnUploaded);
+    const emptyShell = episodes.length === 0;
     const onCloud = remoteShowIds.has(show.id);
 
     if (onCloud) {
@@ -487,7 +488,9 @@ export async function syncLibraryFromCloud(
       continue;
     }
 
-    if (hadPublished) {
+    // Gone from phone catalog: remove if it was published, or it's an empty leftover shell.
+    // Keep local-only encodes that still have episode files/rows never uploaded.
+    if (hadPublished || emptyShell) {
       try {
         await deleteShow(prisma, mediaRoot, show.id, config, {
           skipCloudCascade: true,
