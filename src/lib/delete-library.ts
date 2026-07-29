@@ -470,7 +470,6 @@ export async function syncLibraryFromCloud(
   for (const show of shows) {
     const episodes = show.seasons.flatMap((s) => s.episodes);
     const hadPublished = episodes.some((ep) => ep.cloudRegistered || ep.cdnUploaded);
-    const emptyShell = episodes.length === 0;
     const onCloud = remoteShowIds.has(show.id);
 
     if (onCloud) {
@@ -488,9 +487,10 @@ export async function syncLibraryFromCloud(
       continue;
     }
 
-    // Gone from phone catalog: remove if it was published, or it's an empty leftover shell.
-    // Keep local-only encodes that still have episode files/rows never uploaded.
-    if (hadPublished || emptyShell) {
+    // Gone from phone catalog: remove only if it had been published there.
+    // Do NOT delete empty shells — a brand-new series is empty until the first
+    // episode encodes, and Jobs polling refreshes Library (which would wipe it).
+    if (hadPublished) {
       try {
         await deleteShow(prisma, mediaRoot, show.id, config, {
           skipCloudCascade: true,

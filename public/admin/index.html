@@ -1048,6 +1048,26 @@
         return Math.max(catalogMax, reserved) + 1;
       }
 
+      function autoEpisodeName(num) {
+        return `${num}. Episode #${num}`;
+      }
+
+      function looksLikeAutoEpisodeName(name) {
+        const t = String(name || "").trim();
+        if (!t) return true;
+        return /^\d+\.\s*Episode\s*#\d+\s*$/i.test(t) || /^Episode\s*#\d+\s*$/i.test(t);
+      }
+
+      function syncAutoEpisodeNamesFromNumbers() {
+        episodeTitles = episodeFiles.map((_file, index) => {
+          const num = episodeNumbers[index];
+          const current = episodeTitles[index];
+          if (!Number.isInteger(num) || num < 1) return current || titleFromFilename(_file.name);
+          if (looksLikeAutoEpisodeName(current)) return autoEpisodeName(num);
+          return current || autoEpisodeName(num);
+        });
+      }
+
       function assignDefaultEpisodeNumbers() {
         const mode = $("episodeMode")?.value || "append";
         if (mode === "replace") {
@@ -1055,6 +1075,7 @@
           episodeNumbers = episodeFiles.map(() =>
             Number.isInteger(replaceEpisode) && replaceEpisode > 0 ? replaceEpisode : 1,
           );
+          syncAutoEpisodeNamesFromNumbers();
           return;
         }
         let next = nextEpisodeStartNumber();
@@ -1075,6 +1096,18 @@
           used.add(n);
           next += 1;
           return n;
+        });
+        // Prefer "8. Episode #8" style names tied to episode # (not the file name).
+        episodeTitles = episodeFiles.map((_file, index) => {
+          const num = episodeNumbers[index];
+          const current = episodeTitles[index];
+          if (looksLikeAutoEpisodeName(current) || !current?.trim()) {
+            return autoEpisodeName(num);
+          }
+          // Filename-derived filler like "by HB Hammad Dyar" → use numbered style.
+          const fromFile = titleFromFilename(_file.name);
+          if (!current || current === fromFile) return autoEpisodeName(num);
+          return current;
         });
       }
 
@@ -1136,6 +1169,19 @@
             const codeEl = list.querySelector(`[data-code-index="${i}"]`);
             if (codeEl && Number.isInteger(value) && value > 0) {
               codeEl.textContent = `In app: S${String(seasonLabel).padStart(2, "0")}E${String(value).padStart(2, "0")}`;
+            }
+            const titleInput = list.querySelector(
+              `.episode-title-input[data-index="${i}"]`,
+            );
+            if (
+              titleInput &&
+              Number.isInteger(value) &&
+              value > 0 &&
+              looksLikeAutoEpisodeName(titleInput.value)
+            ) {
+              const nextName = autoEpisodeName(value);
+              titleInput.value = nextName;
+              episodeTitles[i] = nextName;
             }
           });
         });
@@ -1520,7 +1566,15 @@
           const data = await api("/v1/admin/jobs");
           serverJobs = data.jobs || [];
           renderJobs();
-          if (!serverJobs.some((j) => j.status === "queued" || j.status === "running")) {
+          const uploadsBusy = localUploads.some(
+            (u) => u.status === "uploading" || u.status === "queued",
+          );
+          const jobsBusy = serverJobs.some(
+            (j) => j.status === "queued" || j.status === "running",
+          );
+          // Don't sync-from-cloud while uploading — a new series is empty until
+          // the first episode lands and sync used to delete that shell.
+          if (!uploadsBusy && !jobsBusy) {
             await refreshLibrary();
             await refreshShows();
           }
@@ -1918,11 +1972,29 @@
         let showYear = "";
         const seasonNumber = selectedSeasonNumber();
 
+        // Catalog may be stale after deletes/sync — refresh before upload.
+        const previousShowLabel =
+          $("showSelect")?.selectedOptions?.[0]?.textContent?.trim() || "";
+        try {
+          await refreshShows();
+        } catch (error) {
+          $("episodeMsg").textContent =
+            error.message || "Couldn’t refresh series list. Try again.";
+          $("episodeMsg").className = "msg error";
+          return;
+        }
+
         if (showMode === "existing") {
           showId = $("showSelect").value;
-          if (!showId) {
-            $("episodeMsg").textContent = "Select an existing series.";
+          if (!showId || !showCatalog.some((s) => s.id === showId)) {
+            $("episodeMsg").textContent =
+              "That series is gone from this Mac (deleted or synced away). Switch to New series and enter the title again, or pick another series.";
             $("episodeMsg").className = "msg error";
+            setShowMode("new");
+            const guessed = previousShowLabel.replace(/\s*\(\d{4}\)\s*$/, "").trim();
+            if (guessed && guessed !== "Select a series…") {
+              $("showTitle").value = guessed;
+            }
             return;
           }
           if (!Number.isInteger(seasonNumber) || seasonNumber < 0) {
@@ -2767,6 +2839,8 @@
                   : `Cloud sync warning: ${(sync.errors || []).join("; ")}`;
               msg.className = (sync.errors || []).length ? "msg error" : "msg ok";
             }
+            // Drop stale series from the Upload episodes dropdown too.
+            void refreshShows().catch(() => undefined);
           }
         }
         $("moviesBody").innerHTML = data.movies
