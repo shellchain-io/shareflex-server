@@ -21,6 +21,8 @@ export type AddEpisodeOptions = {
   episodeTitle?: string;
   description?: string;
   seasonDescription?: string;
+  /** Original client upload filename for Library / Jobs display. */
+  sourceFile?: string;
   /** Custom season artwork; required for brand-new seasons via admin. */
   seasonPosterSourcePath?: string;
   showYear?: number;
@@ -66,6 +68,8 @@ export async function addEpisode(options: AddEpisodeOptions) {
     });
 
     const absoluteSource = path.resolve(options.sourcePath);
+    const sourceFile =
+      options.sourceFile?.trim() || path.basename(absoluteSource) || null;
     const episodeId = options.episodeId ?? createId("e");
 
     let show =
@@ -202,6 +206,9 @@ export async function addEpisode(options: AddEpisodeOptions) {
         posterPath: result.posterRelativePath,
         contentVersion: "1",
         ready: false,
+        cdnUploaded: false,
+        cloudRegistered: false,
+        sourceFile,
       },
       update: {
         title: options.episodeTitle ?? result.title,
@@ -209,6 +216,9 @@ export async function addEpisode(options: AddEpisodeOptions) {
         runtimeSeconds: result.durationSeconds,
         posterPath: result.posterRelativePath,
         ready: false,
+        cdnUploaded: false,
+        cloudRegistered: false,
+        sourceFile,
       },
     });
 

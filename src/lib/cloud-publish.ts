@@ -1,7 +1,9 @@
 import path from "node:path";
+import type { PrismaClient } from "../../generated/prisma/client.js";
 import type { Env } from "./env.js";
 import type { JobContext } from "./jobs.js";
 import { publishLocalPackageToR2 } from "./publish-r2.js";
+import { applyPublishFlags } from "./publish-status.js";
 import type {
   RegisterEpisodeInput,
   RegisterMovieInput,
@@ -106,6 +108,42 @@ export async function registerEpisodeOnCloud(
 }
 
 /**
+ * Mirror a Mac library delete onto the GCE API DB (same ids).
+ * Skips when PUBLISH_TARGET_URL is unset. 404 on cloud is treated as already gone.
+ */
+export async function deleteOnCloudApi(
+  config: Env,
+  path: `/v1/admin/shows/${string}` | `/v1/admin/seasons/${string}` | `/v1/admin/movies/${string}` | `/v1/admin/episodes/${string}/media` | `/v1/admin/movies/${string}/media`,
+): Promise<{ attempted: boolean; ok: boolean; message?: string }> {
+  if (!publishTargetConfigured(config)) {
+    return { attempted: false, ok: true };
+  }
+  try {
+    const token = await loginToCloud(config);
+    const base = config.PUBLISH_TARGET_URL.replace(/\/$/, "");
+    const res = await fetch(`${base}${path}`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (res.ok || res.status === 404) {
+      return { attempted: true, ok: true };
+    }
+    const body = (await res.json().catch(() => ({}))) as {
+      message?: string;
+      error?: string;
+    };
+    const message =
+      body.message || body.error || `Cloud delete failed (${res.status}).`;
+    console.warn(`Cloud delete ${path}:`, message);
+    return { attempted: true, ok: false, message };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`Cloud delete ${path}:`, message);
+    return { attempted: true, ok: false, message };
+  }
+}
+
+/**
  * After local encode: upload HLS to R2, then register metadata on GCE.
  * Throws on failure; partial progress is written via ctx.setProgress for UI retry.
  */
@@ -114,13 +152,14 @@ export async function finishCloudPublish(options: {
   mediaRoot: string;
   kind: "movies" | "episodes";
   id: string;
+  prisma?: PrismaClient;
   ctx?: JobContext | undefined;
   moviePayload?: RegisterMovieInput | undefined;
   episodePayload?: RegisterEpisodeInput | undefined;
   /** Extra local dirs to push (e.g. show/season posters). */
   extraUploads?: Array<{ localDir: string; keyPrefix: string }> | undefined;
 }): Promise<PublishPipelineResult> {
-  const { config, mediaRoot, kind, id, ctx } = options;
+  const { config, mediaRoot, kind, id, ctx, prisma } = options;
   const result: PublishPipelineResult = {
     r2Uploaded: false,
     cloudRegistered: false,
@@ -187,6 +226,9 @@ export async function finishCloudPublish(options: {
     }
 
     result.r2Uploaded = true;
+    if (prisma) {
+      await applyPublishFlags(prisma, kind, id, { r2Uploaded: true });
+    }
     ctx?.setProgress({
       detail: `CDN upload done (${uploaded.uploaded} files)`,
       progress: 100,
@@ -225,6 +267,9 @@ export async function finishCloudPublish(options: {
       await registerEpisodeOnCloud(config, options.episodePayload);
     }
     result.cloudRegistered = true;
+    if (prisma) {
+      await applyPublishFlags(prisma, kind, id, { cloudRegistered: true });
+    }
     ctx?.setProgress({
       detail: "Registered on cloud API",
       result: { ...result },

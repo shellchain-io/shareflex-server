@@ -29,6 +29,8 @@ export type AdminJob = {
   stage: AdminJobStage;
   title: string;
   detail: string;
+  /** Original upload filename — kept for the life of the job so operators can match disk files. */
+  sourceFile: string | null;
   /** 0–100 when known (encode rungs / CDN files). */
   progress: number | null;
   error: string | null;
@@ -116,6 +118,7 @@ export function enqueueAdminJob(input: {
   kind: AdminJobKind;
   title: string;
   detail: string;
+  sourceFile?: string | null;
   run: JobRunner;
   lane?: JobLane;
 }): AdminJob {
@@ -130,6 +133,7 @@ export function enqueueAdminJob(input: {
     stage: "queued",
     title: input.title,
     detail: input.detail,
+    sourceFile: input.sourceFile?.trim() || null,
     progress: null,
     error: null,
     result: null,

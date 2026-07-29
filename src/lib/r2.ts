@@ -3,11 +3,13 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   DeleteObjectsCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { Env } from "./env.js";
+
 
 function contentTypeForKey(key: string): string {
   const ext = path.extname(key).toLowerCase();
@@ -141,6 +143,50 @@ export async function uploadDirectoryToR2(options: {
     throw new Error("Cancelled.");
   }
   return { uploaded };
+}
+
+/** True when the object exists in R2 (e.g. movies/{id}/master.m3u8). */
+export async function r2ObjectExists(options: {
+  config: Env;
+  key: string;
+}): Promise<boolean> {
+  if (!r2Ready(options.config)) {
+    return false;
+  }
+  const client = createR2Client(options.config);
+  const bucket = options.config.R2_BUCKET || "shareflex-media";
+  const key = options.key.replace(/^\/+/, "");
+  try {
+    await client.send(
+      new HeadObjectCommand({
+        Bucket: bucket,
+        Key: key,
+      }),
+    );
+    return true;
+  } catch (error) {
+    const status =
+      typeof error === "object" &&
+      error !== null &&
+      "$metadata" in error &&
+      typeof (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+        ?.httpStatusCode === "number"
+        ? (error as { $metadata: { httpStatusCode: number } }).$metadata
+            .httpStatusCode
+        : undefined;
+    const name =
+      typeof error === "object" && error !== null && "name" in error
+        ? String((error as { name: unknown }).name)
+        : "";
+    if (status === 404 || name === "NotFound" || name === "NoSuchKey") {
+      return false;
+    }
+    console.warn(
+      `R2 HEAD failed for ${key}:`,
+      error instanceof Error ? error.message : error,
+    );
+    return false;
+  }
 }
 
 /**

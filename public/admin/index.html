@@ -149,6 +149,8 @@
         font-weight: 700;
       }
       .pill.ready { background: rgba(61,214,140,0.15); color: var(--ok); }
+      .pill.cdn { background: rgba(110,168,254,0.18); color: var(--run); }
+      .pill.cloud { background: rgba(61,214,140,0.22); color: var(--ok); }
       .pill.queued { background: rgba(245,165,36,0.15); color: var(--warn); }
       .pill.queued_upload { background: rgba(245,165,36,0.15); color: var(--warn); }
       .pill.queued_encode { background: rgba(245,165,36,0.15); color: var(--warn); }
@@ -210,12 +212,40 @@
         overflow: auto;
       }
       .modal-sheet {
-        width: min(720px, 100%);
+        position: relative;
+        width: min(800px, 100%);
         background: #121218;
         border: 1px solid var(--line);
         border-radius: 16px;
         padding: 20px 22px 24px;
         box-shadow: 0 24px 80px rgba(0,0,0,0.45);
+      }
+      .detail-busy {
+        position: absolute;
+        inset: 0;
+        z-index: 20;
+        border-radius: 16px;
+        background: rgba(10, 10, 14, 0.78);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        text-align: center;
+      }
+      .detail-busy.hidden { display: none; }
+      .detail-busy-card {
+        max-width: 320px;
+        color: var(--text);
+        font-size: 15px;
+        font-weight: 600;
+        line-height: 1.45;
+      }
+      .detail-busy-card span {
+        display: block;
+        margin-top: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--muted);
       }
       .modal-head {
         display: flex;
@@ -246,15 +276,96 @@
         color: var(--dim);
       }
       .ep-row {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px 20px;
         align-items: center;
-        padding: 10px 0;
+        padding: 14px 0;
         border-bottom: 1px solid rgba(42,42,52,0.7);
       }
       .ep-row:last-child { border-bottom: 0; }
-      .ep-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+      .ep-row-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .ep-row-meta {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--muted);
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        align-items: flex-start;
+      }
+      .ep-row-file {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 11px;
+        color: var(--dim);
+        word-break: break-all;
+        line-height: 1.35;
+        max-width: 42ch;
+      }
+      .ep-row-meta .dot {
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        background: var(--dim);
+        display: inline-block;
+      }
+      .ep-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-shrink: 0;
+      }
+      .ep-more {
+        position: relative;
+      }
+      .ep-more > summary {
+        list-style: none;
+        cursor: pointer;
+        user-select: none;
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .ep-more > summary::-webkit-details-marker { display: none; }
+      .ep-more > summary:hover { color: var(--text); border-color: rgba(255,255,255,0.28); }
+      .ep-more[open] > summary { color: var(--text); border-color: rgba(255,255,255,0.28); }
+      .ep-more-menu {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 6px);
+        z-index: 5;
+        min-width: 180px;
+        padding: 6px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: #1a1a22;
+        box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .ep-more-menu button {
+        width: 100%;
+        text-align: left;
+        justify-content: flex-start;
+        border-radius: 7px;
+        padding: 8px 10px;
+        font-size: 12px;
+      }
+      .season-summary {
+        margin: 0 0 14px;
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.45;
+      }
       .btn-play {
         background: var(--accent);
         color: #0b0b0f;
@@ -293,10 +404,21 @@
       }
       .btn-cdn:hover { background: rgba(255,255,255,0.14); }
       .btn-cdn.compact {
-        padding: 5px 10px;
-        font-size: 11px;
+        padding: 6px 11px;
+        font-size: 12px;
       }
       .btn-cdn:disabled { opacity: 0.4; cursor: not-allowed; }
+      .btn-ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 6px 11px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .btn-ghost:hover { color: var(--text); border-color: rgba(255,255,255,0.28); }
       .detail-danger {
         display: flex;
         flex-wrap: wrap;
@@ -701,6 +823,9 @@
         <div id="previewBox" class="preview-box hidden">
           <video id="previewVideo" controls playsinline></video>
           <div class="preview-caption" id="previewCaption">Preview</div>
+        </div>
+        <div id="detailBusy" class="detail-busy hidden" aria-live="polite">
+          <div class="detail-busy-card" id="detailBusyText">Working…</div>
         </div>
       </div>
     </div>
@@ -1129,7 +1254,11 @@
             const meta = jobStatusMeta("upload", u.status);
             const canCancel = u.status === "queued" || u.status === "uploading";
             return `<tr>
-              <td><strong>${escapeHtml(u.title)}</strong><div class="muted">${escapeHtml(u.detail)}${
+              <td><strong>${escapeHtml(u.title)}</strong>${
+                u.sourceFile
+                  ? `<div class="muted" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px">${escapeHtml(u.sourceFile)}</div>`
+                  : ""
+              }<div class="muted">${escapeHtml(u.detail)}${
                 u.status === "uploading" && u.progress != null ? ` · ${u.progress}%` : ""
               }</div></td>
               <td>${escapeHtml(u.kind)}</td>
@@ -1158,8 +1287,11 @@
               job.status === "queued" || job.status === "running"
                 ? `<button type="button" class="btn-cancel-job" data-cancel-encode="${escapeHtml(job.id)}">Cancel</button>`
                 : "";
+            const sourceLine = job.sourceFile
+              ? `<div class="muted" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px">${escapeHtml(job.sourceFile)}</div>`
+              : "";
             return `<tr>
-              <td><strong>${escapeHtml(job.title)}</strong><div class="muted">${escapeHtml(job.detail)}${progressText}${
+              <td><strong>${escapeHtml(job.title)}</strong>${sourceLine}<div class="muted">${escapeHtml(job.detail)}${progressText}${
                 job.error ? ` · ${escapeHtml(job.error)}` : ""
               }${flagText}</div></td>
               <td>${escapeHtml(job.kind === "publish" ? "cdn" : job.kind)}</td>
@@ -1198,6 +1330,14 @@
       function cancelLocalUpload(id) {
         const row = localUploads.find((u) => u.id === id);
         if (!row) return;
+        if (row.status !== "queued" && row.status !== "uploading") return;
+        if (
+          !confirm(
+            "Cancel this upload? Encoded files on disk are kept if encode already finished; an in-progress upload stops.",
+          )
+        ) {
+          return;
+        }
         if (row.status === "uploading" && row.xhr) {
           try {
             row.xhr.abort();
@@ -1214,6 +1354,13 @@
       }
 
       async function cancelEncodeJob(id) {
+        const job = serverJobs.find((j) => j.id === id);
+        const label = job?.label || job?.title || "this job";
+        const awaitingCdn = job?.stage === "awaiting_cdn" || job?.status === "succeeded";
+        const msg = awaitingCdn
+          ? `Dismiss “${label}” from the jobs list? Local encode is kept — you can upload to CDN later from the library.`
+          : `Cancel “${label}”? If still encoding, progress stops and partial encode files are removed.`;
+        if (!confirm(msg)) return;
         try {
           await api(`/v1/admin/jobs/${encodeURIComponent(id)}/cancel`, {
             method: "POST",
@@ -1547,7 +1694,8 @@
           id: localId,
           kind: "movie",
           title,
-          detail: file.name,
+          sourceFile: file.name,
+          detail: "Uploading to encode queue…",
           status: "queued",
           progress: null,
           updatedAt: new Date().toISOString(),
@@ -1594,7 +1742,7 @@
           } else {
             row.status = "failed";
             row.progress = null;
-            row.detail = `${file.name} · ${error.message}`;
+            row.detail = error.message;
             row.updatedAt = new Date().toISOString();
           }
         }
@@ -1775,7 +1923,8 @@
             id: localId,
             kind: "episode",
             title: label,
-            detail: file.name,
+            sourceFile: file.name,
+            detail: "Uploading to encode queue…",
             status: "queued",
             progress: null,
             updatedAt: new Date().toISOString(),
@@ -1846,7 +1995,7 @@
             } else {
               row.status = "failed";
               row.progress = null;
-              row.detail = `${file.name} · ${error.message}`;
+              row.detail = error.message;
               row.updatedAt = new Date().toISOString();
             }
           }
@@ -1867,8 +2016,119 @@
 
       function statusPill(ready) {
         return ready
-          ? '<span class="pill ready">Ready</span>'
+          ? '<span class="pill ready">Encoded</span>'
           : '<span class="pill queued">Not ready</span>';
+      }
+
+      /** One status for the furthest publish stage. */
+      function publishStatusPill(item) {
+        if (!item?.ready) {
+          return '<span class="pill queued">Not ready</span>';
+        }
+        if (item.cloudRegistered) {
+          return '<span class="pill cloud">On cloud</span>';
+        }
+        if (item.cdnUploaded) {
+          return '<span class="pill cdn">On CDN</span>';
+        }
+        return '<span class="pill queued">Encoded only</span>';
+      }
+
+      function publishStatusSummary(item) {
+        if (!item?.ready) {
+          return "Not ready yet — still processing, failed, or missing a finished encode. Check Jobs.";
+        }
+        if (item.cloudRegistered) {
+          return "Encoded locally, on CDN, and registered on the cloud API.";
+        }
+        if (item.cdnUploaded) {
+          return "On CDN, but not registered on the cloud API yet.";
+        }
+        return "Encoded on this Mac — not uploaded to CDN yet.";
+      }
+
+      function episodeActionButtons(ep, code) {
+        if (!ep.ready) {
+          return `<div class="ep-actions">
+            ${publishStatusPill(ep)}
+            <button type="button" class="btn-play" disabled>Play</button>
+          </div>`;
+        }
+
+        let primary = "";
+        if (!ep.cdnUploaded) {
+          primary = `<button type="button" class="btn-cdn compact" data-action="publish-full-episode" data-id="${escapeHtml(
+            ep.id,
+          )}" data-label="${escapeHtml(code)}">Upload</button>`;
+        } else if (!ep.cloudRegistered) {
+          primary = `<button type="button" class="btn-cdn compact" data-action="register-episode" data-id="${escapeHtml(
+            ep.id,
+          )}" data-label="${escapeHtml(code)}">Register</button>`;
+        }
+
+        return `<div class="ep-actions">
+          ${publishStatusPill(ep)}
+          <button type="button" class="btn-play" data-play-kind="episode" data-play-id="${escapeHtml(
+            ep.id,
+          )}" data-play-label="${escapeHtml(`${code} · ${ep.title}`)}">Play</button>
+          ${primary}
+          <details class="ep-more">
+            <summary>More</summary>
+            <div class="ep-more-menu">
+              <button type="button" class="btn-ghost" data-action="publish-full-episode" data-id="${escapeHtml(
+                ep.id,
+              )}" data-label="${escapeHtml(code)}">Upload CDN + cloud</button>
+              <button type="button" class="btn-ghost" data-action="publish-episode" data-id="${escapeHtml(
+                ep.id,
+              )}" data-label="${escapeHtml(code)}">Reupload CDN only</button>
+              <button type="button" class="btn-ghost" data-action="register-episode" data-id="${escapeHtml(
+                ep.id,
+              )}" data-label="${escapeHtml(code)}">Register cloud</button>
+              <button type="button" class="btn-danger-ghost compact" data-action="purge-episode" data-id="${escapeHtml(
+                ep.id,
+              )}" data-label="${escapeHtml(code)}">Remove video</button>
+            </div>
+          </details>
+        </div>`;
+      }
+
+      function movieActionButtons(m) {
+        if (!m.ready) {
+          return `${publishStatusPill(m)}
+            <button type="button" class="btn-play" disabled>Play movie</button>`;
+        }
+        let primary = "";
+        if (!m.cdnUploaded) {
+          primary = `<button type="button" class="btn-cdn" data-action="publish-full-movie" data-id="${escapeHtml(
+            m.id,
+          )}" data-label="${escapeHtml(m.title)}">Upload</button>`;
+        } else if (!m.cloudRegistered) {
+          primary = `<button type="button" class="btn-cdn" data-action="register-movie" data-id="${escapeHtml(
+            m.id,
+          )}" data-label="${escapeHtml(m.title)}">Register</button>`;
+        }
+        return `${publishStatusPill(m)}
+          <button type="button" class="btn-play" data-play-kind="movie" data-play-id="${escapeHtml(
+            m.id,
+          )}" data-play-label="${escapeHtml(m.title)}">Play</button>
+          ${primary}
+          <details class="ep-more">
+            <summary>More</summary>
+            <div class="ep-more-menu">
+              <button type="button" class="btn-ghost" data-action="publish-full-movie" data-id="${escapeHtml(
+                m.id,
+              )}" data-label="${escapeHtml(m.title)}">Upload CDN + cloud</button>
+              <button type="button" class="btn-ghost" data-action="publish-movie" data-id="${escapeHtml(
+                m.id,
+              )}" data-label="${escapeHtml(m.title)}">Reupload CDN only</button>
+              <button type="button" class="btn-ghost" data-action="register-movie" data-id="${escapeHtml(
+                m.id,
+              )}" data-label="${escapeHtml(m.title)}">Register cloud</button>
+              <button type="button" class="btn-danger-ghost compact" data-action="purge-movie" data-id="${escapeHtml(
+                m.id,
+              )}" data-label="${escapeHtml(m.title)}">Remove video</button>
+            </div>
+          </details>`;
       }
 
       function jobStatusPill(status) {
@@ -1944,12 +2204,33 @@
         stopPreview();
         showDetailCache = null;
         activeSeasonIndex = 0;
+        hideDetailBusy();
         $("detailModal").classList.add("hidden");
         $("detailBody").innerHTML = "Loading…";
       }
 
+      function showDetailBusy(title, detail) {
+        const el = $("detailBusy");
+        const text = $("detailBusyText");
+        if (text) {
+          text.innerHTML = `${escapeHtml(title)}${
+            detail ? `<span>${escapeHtml(detail)}</span>` : ""
+          }`;
+        }
+        el?.classList.remove("hidden");
+        const closeBtn = $("detailCloseBtn");
+        if (closeBtn) closeBtn.disabled = true;
+      }
+
+      function hideDetailBusy() {
+        $("detailBusy")?.classList.add("hidden");
+        const closeBtn = $("detailCloseBtn");
+        if (closeBtn) closeBtn.disabled = false;
+      }
+
       function openDetailModal(kindLabel, title) {
         stopPreview();
+        hideDetailBusy();
         $("detailKind").textContent = kindLabel;
         $("detailTitle").textContent = title;
         $("detailBody").innerHTML = '<span class="muted">Loading…</span>';
@@ -1982,67 +2263,54 @@
               const code = `S${String(season.seasonNumber).padStart(2, "0")}E${String(
                 ep.episodeNumber,
               ).padStart(2, "0")}`;
-              const playBtn = ep.ready
-                ? `<button type="button" class="btn-play" data-play-kind="episode" data-play-id="${escapeHtml(
-                    ep.id,
-                  )}" data-play-label="${escapeHtml(`${code} · ${ep.title}`)}">Play</button>`
-                : `<button type="button" class="btn-play" disabled>Play</button>`;
-              const removeVideoBtn = ep.ready
-                ? `<button type="button" class="btn-danger-ghost compact" data-action="purge-episode" data-id="${escapeHtml(
-                    ep.id,
-                  )}" data-label="${escapeHtml(code)}">Remove video</button>`
-                : "";
-              const reuploadBtn = ep.ready
-                ? `<button type="button" class="btn-cdn compact" data-action="publish-episode" data-id="${escapeHtml(
-                    ep.id,
-                  )}" data-label="${escapeHtml(code)}">Reupload CDN</button>
-                   <button type="button" class="btn-cdn compact" data-action="publish-full-episode" data-id="${escapeHtml(
-                    ep.id,
-                  )}" data-label="${escapeHtml(code)}">CDN+cloud</button>
-                   <button type="button" class="btn-cdn compact" data-action="register-episode" data-id="${escapeHtml(
-                    ep.id,
-                  )}" data-label="${escapeHtml(code)}">Register</button>`
+              const runtime = ep.runtimeSeconds
+                ? `${Math.round(ep.runtimeSeconds / 60)} min`
+                : "Runtime pending";
+              const fileLine = ep.sourceFile
+                ? `<div class="ep-row-file">${escapeHtml(ep.sourceFile)}</div>`
                 : "";
               return `<div class="ep-row">
                 <div>
-                  <div><strong>${code}</strong> · ${escapeHtml(ep.title)}</div>
-                  <div class="muted">${
-                    ep.runtimeSeconds
-                      ? Math.round(ep.runtimeSeconds / 60) + "m"
-                      : "Runtime pending"
-                  }</div>
+                  <div class="ep-row-title">${code} · ${escapeHtml(ep.title)}</div>
+                  <div class="ep-row-meta">
+                    <span>${runtime}</span>
+                    ${fileLine}
+                  </div>
                 </div>
-                <div class="ep-actions">
-                  ${statusPill(ep.ready)}
-                  ${playBtn}
-                  ${reuploadBtn}
-                  ${removeVideoBtn}
-                </div>
+                ${episodeActionButtons(ep, code)}
               </div>`;
             })
             .join("");
 
+          const cdnCount = (season.episodes || []).filter((e) => e.cdnUploaded).length;
+          const cloudCount = (season.episodes || []).filter((e) => e.cloudRegistered).length;
+          const pendingCount = (season.episodes || []).filter(
+            (e) => e.ready && !e.cdnUploaded,
+          ).length;
+
           seasonBody = `
             <div class="detail-section" style="border-top:0;padding-top:8px;margin-top:8px">
-              <h3>${escapeHtml(season.title || `Season ${season.seasonNumber}`)}
-                <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">
-                  · ${season.readyCount}/${season.episodeCount} ready
-                  · ${season.hasPoster ? "poster set" : "no season poster"}
-                </span>
-              </h3>
+              <h3>${escapeHtml(season.title || `Season ${season.seasonNumber}`)}</h3>
+              <p class="season-summary">
+                ${season.readyCount}/${season.episodeCount} encoded
+                · ${cdnCount} on CDN
+                · ${cloudCount} on cloud
+                ${pendingCount ? ` · ${pendingCount} still need upload` : ""}
+                · ${season.hasPoster ? "poster set" : "no season poster"}
+              </p>
               ${
                 season.description
-                  ? `<p class="muted" style="margin:0 0 10px">${escapeHtml(season.description)}</p>`
+                  ? `<p class="muted" style="margin:0 0 14px">${escapeHtml(season.description)}</p>`
                   : ""
               }
               ${
                 season.readyCount > 0
-                  ? `<div style="margin:0 0 12px">
-                      <button type="button" class="btn-cdn" data-action="publish-season" data-id="${escapeHtml(
+                  ? `<div style="margin:0 0 8px">
+                      <button type="button" class="btn-ghost" data-action="publish-season" data-id="${escapeHtml(
                         season.id,
                       )}" data-label="${escapeHtml(
                         season.title || `Season ${season.seasonNumber}`,
-                      )}">Reupload season to CDN (${season.readyCount})</button>
+                      )}">Reupload all to CDN (${season.readyCount})</button>
                     </div>`
                   : ""
               }
@@ -2106,35 +2374,11 @@
           const data = await api(`/v1/admin/library/movies/${encodeURIComponent(id)}`);
           const m = data.movie;
           const jobs = data.jobs || [];
-          const playBtn = m.ready
-            ? `<button type="button" class="btn-play" data-play-kind="movie" data-play-id="${escapeHtml(
-                m.id,
-              )}" data-play-label="${escapeHtml(m.title)}">Play movie</button>`
-            : `<button type="button" class="btn-play" disabled>Play movie</button>`;
-          const removeVideoBtn = m.ready
-            ? `<button type="button" class="btn-danger-ghost" data-action="purge-movie" data-id="${escapeHtml(
-                m.id,
-              )}" data-label="${escapeHtml(m.title)}">Remove video</button>`
-            : "";
-          const reuploadBtn = m.ready
-            ? `<button type="button" class="btn-cdn" data-action="publish-movie" data-id="${escapeHtml(
-                m.id,
-              )}" data-label="${escapeHtml(m.title)}">Reupload CDN</button>
-               <button type="button" class="btn-cdn" data-action="publish-full-movie" data-id="${escapeHtml(
-                m.id,
-              )}" data-label="${escapeHtml(m.title)}">Publish CDN+cloud</button>
-               <button type="button" class="btn-cdn" data-action="register-movie" data-id="${escapeHtml(
-                m.id,
-              )}" data-label="${escapeHtml(m.title)}">Register cloud</button>`
-            : "";
           $("detailBody").innerHTML = `
-            <div class="detail-meta">
-              <span>${statusPill(m.ready)}</span>
+            <div class="detail-meta" style="align-items:center">
+              ${movieActionButtons(m)}
               <span>${m.year ?? "No year"}</span>
               <span>${m.hasPoster ? "Poster set" : "No poster"}</span>
-              <span>${m.hasDescription ? "Has description" : "No description"}</span>
-              ${playBtn}
-              ${reuploadBtn}
             </div>
             <p class="muted" style="margin:0 0 8px">${
               m.description
@@ -2144,12 +2388,13 @@
             <div class="detail-section">
               <h3>Status</h3>
               <p class="muted" style="margin:0">
-                ${
-                  m.ready
-                    ? "This movie is encoded and ready to stream. Use Play to verify the file."
-                    : "Not ready yet — still processing, failed, or missing a finished encode. Check Jobs."
-                }
+                ${escapeHtml(publishStatusSummary(m))}
               </p>
+              ${
+                m.sourceFile
+                  ? `<p class="ep-row-file" style="margin:8px 0 0">${escapeHtml(m.sourceFile)}</p>`
+                  : ""
+              }
             </div>
             <div class="detail-section">
               <h3>Related jobs</h3>
@@ -2173,7 +2418,6 @@
             </div>
             <div class="detail-danger">
               <p class="hint">Remove video keeps the title and poster so you can re-upload later. Delete movie removes everything.</p>
-              ${removeVideoBtn}
               <button type="button" class="btn-danger-ghost" data-action="delete-movie" data-id="${escapeHtml(
                 m.id,
               )}" data-label="${escapeHtml(m.title)}">Delete movie</button>
@@ -2204,6 +2448,23 @@
       async function runLibraryAction(action, id, label) {
         if (libraryActionBusy) return;
 
+        const confirms = {
+          "publish-movie": `Reupload “${label}” to Cloudflare CDN (R2)?`,
+          "publish-episode": `Reupload ${label} to Cloudflare CDN (R2)?`,
+          "publish-season": `Reupload all ready episodes in “${label}” to CDN?`,
+          "publish-full-movie": `Upload “${label}” to CDN and register metadata on the cloud API?`,
+          "publish-full-episode": `Upload ${label} to CDN and register metadata on the cloud API?`,
+          "register-movie": `Register “${label}” on the cloud API only?\n\nCDN/R2 must already have the files — this does not upload video.`,
+          "register-episode": `Register ${label} on the cloud API only?\n\nCDN/R2 must already have the files — this does not upload video.`,
+          "purge-movie": `Remove the video for “${label}”?\n\nDeletes: Mac encode files + R2 package (+ cloud media if configured).\nKeeps: title and poster so you can re-upload.`,
+          "delete-movie": `Delete movie “${label}”?\n\nDeletes: Mac library row, local encode, R2 files, and cloud API entry (if configured).\nThis cannot be undone.`,
+          "purge-episode": `Remove the video for ${label}?\n\nDeletes: Mac encode files + R2 package (+ cloud media if configured).\nKeeps: the episode slot so you can replace the upload.`,
+          "delete-season": `Delete “${label}”?\n\nDeletes: Mac seasons/episodes, local encodes, R2 files, and cloud API season (if configured).\nThis cannot be undone.`,
+          "delete-show": `Delete series “${label}”?\n\nDeletes everywhere:\n• Mac library + local encodes\n• Cloudflare R2 video files\n• Cloud API (GCE) metadata (if PUBLISH_TARGET is set)\n\nThis cannot be undone.`,
+        };
+        const message = confirms[action] || `Run “${action}” on ${label}?`;
+        if (!window.confirm(message)) return;
+
         if (
           action === "publish-movie" ||
           action === "publish-episode" ||
@@ -2213,16 +2474,6 @@
           action === "register-movie" ||
           action === "register-episode"
         ) {
-          const confirms = {
-            "publish-movie": `Reupload “${label}” to Cloudflare CDN (R2)?`,
-            "publish-episode": `Reupload ${label} to Cloudflare CDN (R2)?`,
-            "publish-season": `Reupload all ready episodes in “${label}” to CDN?`,
-            "publish-full-movie": `Upload “${label}” to CDN and register on cloud API?`,
-            "publish-full-episode": `Upload ${label} to CDN and register on cloud API?`,
-            "register-movie": `Register “${label}” metadata on cloud API (CDN must already have the files)?`,
-            "register-episode": `Register ${label} metadata on cloud API (CDN must already have the files)?`,
-          };
-          if (!confirm(confirms[action])) return;
           libraryActionBusy = true;
           try {
             if (action === "publish-movie") {
@@ -2258,7 +2509,7 @@
             }
             switchTab("jobs");
             await refreshJobs();
-            startJobPoll();
+            startJobPolling();
           } catch (error) {
             alert(error.message || "Publish action failed to start.");
           } finally {
@@ -2267,22 +2518,22 @@
           return;
         }
 
-        const confirms = {
-          "purge-movie": `Remove the video for “${label}”? Title and poster stay so you can re-upload later.`,
-          "delete-movie": `Delete movie “${label}” and everything connected? This cannot be undone.`,
-          "purge-episode": `Remove the video for ${label}? The episode slot stays for replace upload.`,
-          "delete-season": `Delete “${label}” and all of its episodes and media? This cannot be undone.`,
-          "delete-show": `Delete series “${label}” and every season/episode? This cannot be undone.`,
-        };
-        const message = confirms[action];
-        if (!message || !confirm(message)) return;
-
         libraryActionBusy = true;
+        const busyCopy = {
+          "purge-movie": ["Removing video…", "Mac files + CDN"],
+          "delete-movie": ["Deleting movie…", "Mac, CDN, and cloud API"],
+          "purge-episode": ["Removing video…", "Mac files + CDN"],
+          "delete-season": ["Deleting season…", "Mac, CDN, and cloud API"],
+          "delete-show": ["Deleting series…", "Mac encodes, R2, and cloud API — please wait"],
+        };
+        const busy = busyCopy[action];
+        if (busy) showDetailBusy(busy[0], busy[1]);
         try {
           if (action === "purge-movie") {
             await api(`/v1/admin/movies/${encodeURIComponent(id)}/media`, {
               method: "DELETE",
             });
+            hideDetailBusy();
             await refreshLibrary();
             await openMovieDetail(id, label);
             return;
@@ -2313,7 +2564,10 @@
                 Math.max(0, (data.show.seasons || []).length - 1),
               );
               $("detailTitle").textContent = data.show.title || showTitle;
+              hideDetailBusy();
               renderShowSeasonPanel();
+            } else {
+              hideDetailBusy();
             }
             return;
           }
@@ -2334,6 +2588,7 @@
             showDetailCache = data;
             activeSeasonIndex = 0;
             $("detailTitle").textContent = data.show.title;
+            hideDetailBusy();
             renderShowSeasonPanel();
             return;
           }
@@ -2346,6 +2601,7 @@
             await refreshShows();
           }
         } catch (err) {
+          hideDetailBusy();
           alert(err.message || "Library action failed.");
         } finally {
           libraryActionBusy = false;
@@ -2487,12 +2743,21 @@
       });
 
       async function startJobCdnUpload(jobId) {
+        const job = serverJobs.find((j) => j.id === jobId);
+        const label = job?.label || job?.title || "this item";
+        if (
+          !confirm(
+            `Upload “${label}” to Cloudflare CDN (R2)? This starts a CDN publish job.`,
+          )
+        ) {
+          return;
+        }
         try {
           await api(`/v1/admin/jobs/${encodeURIComponent(jobId)}/upload-cdn`, {
             method: "POST",
           });
           await refreshJobs();
-          startJobPoll();
+          startJobPolling();
         } catch (error) {
           alert(error.message || "Couldn’t start CDN upload.");
         }
@@ -2517,7 +2782,7 @@
           });
           switchTab("jobs");
           await refreshJobs();
-          startJobPoll();
+          startJobPolling();
           msg.textContent = "Cleanup job queued — watch Jobs for freed space.";
           msg.className = "msg ok";
         } catch (error) {
@@ -2540,6 +2805,8 @@
         }
         const actionBtn = event.target.closest("[data-action]");
         if (actionBtn) {
+          const openMore = actionBtn.closest("details.ep-more");
+          if (openMore) openMore.open = false;
           void runLibraryAction(
             actionBtn.dataset.action,
             actionBtn.dataset.id,
@@ -2556,6 +2823,18 @@
           );
         }
       });
+      $("detailBody").addEventListener("toggle", (event) => {
+        const details = event.target;
+        if (!(details instanceof HTMLDetailsElement) || !details.classList.contains("ep-more")) {
+          return;
+        }
+        if (!details.open) return;
+        $("detailBody")
+          .querySelectorAll("details.ep-more[open]")
+          .forEach((other) => {
+            if (other !== details) other.open = false;
+          });
+      }, true);
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !$("detailModal").classList.contains("hidden")) {
           closeDetailModal();

@@ -29,6 +29,12 @@ import { enqueueAdminJob, getJob, listJobs, cancelAdminJob, startUploadForJob } 
 import { serializeMovie } from "../lib/movies.js";
 import { publishLocalPackageToR2 } from "../lib/publish-r2.js";
 import {
+  backfillEpisodePublishStatus,
+  backfillMoviePublishStatus,
+  markCdnUploaded,
+  markCloudRegistered,
+} from "../lib/publish-status.js";
+import {
   installPosterFile,
   isImageFilename,
   seasonPosterRelativePath,
@@ -283,13 +289,22 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
     { onRequest: [app.requireOwner] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
-      const movie = await app.prisma.movie.findUnique({ where: { id } });
+      let movie = await app.prisma.movie.findUnique({ where: { id } });
       if (!movie) {
         return reply.code(404).send({
           error: "not_found",
           message: "Movie not found.",
         });
       }
+
+      const publish = await backfillMoviePublishStatus(app.prisma, app.config, movie);
+      if (
+        publish.cdnUploaded !== movie.cdnUploaded ||
+        publish.cloudRegistered !== movie.cloudRegistered
+      ) {
+        movie = await app.prisma.movie.findUniqueOrThrow({ where: { id } });
+      }
+
       const relatedJobs = listJobs(40).filter(
         (job) =>
           job.kind === "movie" &&
@@ -299,6 +314,9 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       return {
         movie: {
           ...serializeMovie(movie),
+          cdnUploaded: movie.cdnUploaded,
+          cloudRegistered: movie.cloudRegistered,
+          sourceFile: movie.sourceFile,
           hasPoster: Boolean(movie.posterPath),
           hasDescription: Boolean(movie.description?.trim()),
           createdAt: movie.createdAt.toISOString(),
@@ -327,6 +345,9 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
                   episodeNumber: true,
                   title: true,
                   ready: true,
+                  cdnUploaded: true,
+                  cloudRegistered: true,
+                  sourceFile: true,
                   runtimeSeconds: true,
                   updatedAt: true,
                 },
@@ -342,9 +363,14 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         });
       }
 
-      const episodeIds = new Set(
-        show.seasons.flatMap((season) => season.episodes.map((ep) => ep.id)),
+      const allEpisodes = show.seasons.flatMap((season) => season.episodes);
+      const publishMap = await backfillEpisodePublishStatus(
+        app.prisma,
+        app.config,
+        allEpisodes,
       );
+
+      const episodeIds = new Set(allEpisodes.map((ep) => ep.id));
       const relatedJobs = listJobs(50).filter(
         (job) =>
           job.kind === "episode" &&
@@ -372,14 +398,23 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             hasPoster: Boolean(season.posterPath),
             episodeCount: season.episodes.length,
             readyCount: season.episodes.filter((ep) => ep.ready).length,
-            episodes: season.episodes.map((ep) => ({
-              id: ep.id,
-              episodeNumber: ep.episodeNumber,
-              title: ep.title,
-              ready: ep.ready,
-              runtimeSeconds: ep.runtimeSeconds,
-              updatedAt: ep.updatedAt.toISOString(),
-            })),
+            episodes: season.episodes.map((ep) => {
+              const flags = publishMap.get(ep.id) ?? {
+                cdnUploaded: ep.cdnUploaded,
+                cloudRegistered: ep.cloudRegistered,
+              };
+              return {
+                id: ep.id,
+                episodeNumber: ep.episodeNumber,
+                title: ep.title,
+                ready: ep.ready,
+                cdnUploaded: flags.cdnUploaded,
+                cloudRegistered: flags.cloudRegistered,
+                sourceFile: ep.sourceFile,
+                runtimeSeconds: ep.runtimeSeconds,
+                updatedAt: ep.updatedAt.toISOString(),
+              };
+            }),
           })),
         },
         jobs: relatedJobs,
@@ -398,6 +433,8 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
           ok: true,
           movie: {
             ...serializeMovie(movie),
+            cdnUploaded: movie.cdnUploaded,
+            cloudRegistered: movie.cloudRegistered,
             hasPoster: Boolean(movie.posterPath),
             hasDescription: Boolean(movie.description?.trim()),
           },
@@ -441,6 +478,8 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             episodeNumber: episode.episodeNumber,
             title: episode.title,
             ready: episode.ready,
+            cdnUploaded: episode.cdnUploaded,
+            cloudRegistered: episode.cloudRegistered,
             runtimeSeconds: episode.runtimeSeconds,
             contentVersion: episode.contentVersion,
           },
@@ -608,6 +647,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             mediaRoot: app.mediaRoot,
             kind: "movies",
             id: movie.id,
+            prisma: app.prisma,
             ctx,
             moviePayload: movieRegisterPayloadFromDb(movie),
           });
@@ -655,6 +695,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
           mediaRoot: app.mediaRoot,
           kind: "episodes",
           id: episode.id,
+          prisma: app.prisma,
           ctx,
           episodePayload: episodeRegisterPayloadFromDb(episode),
           extraUploads,
@@ -904,7 +945,8 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       const job = enqueueAdminJob({
         kind: "movie",
         title,
-        detail: path.basename(savedPath),
+        detail: "Queued for encode",
+        sourceFile: video.filename,
         run: async (ctx) => {
           try {
             const result = await addMovie({
@@ -912,6 +954,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
               title,
               description,
               posterSourcePath: thumbPath,
+              sourceFile: video.filename,
               signal: ctx.signal,
               ctx,
               ...(year !== undefined ? { year } : {}),
@@ -1139,7 +1182,8 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       const job = enqueueAdminJob({
         kind: "episode",
         title: `${showTitle} · S${String(seasonNumber).padStart(2, "0")}E${String(episodeNumber).padStart(2, "0")}`,
-        detail: path.basename(savedPath),
+        detail: "Queued for encode",
+        sourceFile: video.filename,
         run: async (ctx) => {
           try {
             const result = await addEpisode({
@@ -1149,6 +1193,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
               seasonNumber,
               episodeNumber,
               description,
+              sourceFile: video.filename,
               signal: ctx.signal,
               ctx,
               ...(seasonDescription ? { seasonDescription } : {}),
@@ -1219,6 +1264,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
               });
             },
           });
+          await markCdnUploaded(app.prisma, "movies", movie.id);
           return { movieId: movie.id, r2Uploaded: true, needsUpload: false, ...result };
         },
       });
@@ -1264,6 +1310,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             result: { movieId: movie.id, r2Uploaded: true, cloudRegistered: false },
           });
           await registerMovieOnCloud(app.config, movieRegisterPayloadFromDb(movie));
+          await markCloudRegistered(app.prisma, "movies", movie.id);
           return {
             movieId: movie.id,
             r2Uploaded: true,
@@ -1312,6 +1359,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
               });
             },
           });
+          await markCdnUploaded(app.prisma, "episodes", episode.id);
           return { episodeId: episode.id, r2Uploaded: true, needsUpload: false, ...result };
         },
       });
@@ -1369,6 +1417,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             app.config,
             episodeRegisterPayloadFromDb(episode),
           );
+          await markCloudRegistered(app.prisma, "episodes", episode.id);
           return {
             episodeId: episode.id,
             showId: episode.season.show.id,
@@ -1411,6 +1460,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             mediaRoot: app.mediaRoot,
             kind: "movies",
             id: movie.id,
+            prisma: app.prisma,
             ctx,
             moviePayload: movieRegisterPayloadFromDb(movie),
           });
@@ -1481,6 +1531,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             mediaRoot: app.mediaRoot,
             kind: "episodes",
             id: episode.id,
+            prisma: app.prisma,
             ctx,
             episodePayload: episodeRegisterPayloadFromDb(episode),
             extraUploads,
@@ -1529,6 +1580,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
               id: ep.id,
               signal: ctx.signal,
             });
+            await markCdnUploaded(app.prisma, "episodes", ep.id);
             return { episodeId: ep.id, r2Uploaded: true, ...result };
           },
         }),

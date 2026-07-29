@@ -1,6 +1,7 @@
 import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import type { PrismaClient } from "../../generated/prisma/client.js";
+import { deleteOnCloudApi } from "./cloud-publish.js";
 import type { Env } from "./env.js";
 import { deletePrefixFromR2 } from "./r2.js";
 
@@ -100,6 +101,8 @@ export async function purgeMovieMedia(
       where: { id: movieId },
       data: {
         ready: false,
+        cdnUploaded: false,
+        cloudRegistered: false,
         runtimeSeconds: null,
         contentVersion: bumpContentVersion(movie.contentVersion),
       },
@@ -108,6 +111,9 @@ export async function purgeMovieMedia(
 
   await purgePlayableFiles(path.join(mediaRoot, "movies", movieId));
   await quietDeleteR2(config, `movies/${movieId}`, true);
+  if (config) {
+    await deleteOnCloudApi(config, `/v1/admin/movies/${movieId}/media`);
+  }
 
   return prisma.movie.findUniqueOrThrow({ where: { id: movieId } });
 }
@@ -127,6 +133,9 @@ export async function deleteMovie(
   await prisma.movie.delete({ where: { id: movieId } });
   await rmQuiet(path.join(mediaRoot, "movies", movieId));
   await quietDeleteR2(config, `movies/${movieId}`, false);
+  if (config) {
+    await deleteOnCloudApi(config, `/v1/admin/movies/${movieId}`);
+  }
   return { ok: true as const, id: movieId };
 }
 
@@ -156,6 +165,8 @@ export async function purgeEpisodeMedia(
       where: { id: episodeId },
       data: {
         ready: false,
+        cdnUploaded: false,
+        cloudRegistered: false,
         runtimeSeconds: null,
         contentVersion: bumpContentVersion(episode.contentVersion),
       },
@@ -164,6 +175,9 @@ export async function purgeEpisodeMedia(
 
   await purgePlayableFiles(path.join(mediaRoot, "episodes", episodeId));
   await quietDeleteR2(config, `episodes/${episodeId}`, true);
+  if (config) {
+    await deleteOnCloudApi(config, `/v1/admin/episodes/${episodeId}/media`);
+  }
   await refreshShowReady(prisma, episode.season.showId);
 
   return prisma.episode.findUniqueOrThrow({ where: { id: episodeId } });
@@ -200,6 +214,10 @@ export async function deleteSeason(
     ...episodeIds.map((id) => quietDeleteR2(config, `episodes/${id}`, false)),
     quietDeleteR2(config, `seasons/${seasonId}`, false),
   ]);
+
+  if (config) {
+    await deleteOnCloudApi(config, `/v1/admin/seasons/${seasonId}`);
+  }
 
   await refreshShowReady(prisma, showId);
 
@@ -245,6 +263,10 @@ export async function deleteShow(
     ...seasonIds.map((id) => quietDeleteR2(config, `seasons/${id}`, false)),
     quietDeleteR2(config, `shows/${showId}`, false),
   ]);
+
+  if (config) {
+    await deleteOnCloudApi(config, `/v1/admin/shows/${showId}`);
+  }
 
   return { ok: true as const, id: showId };
 }

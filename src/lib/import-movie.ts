@@ -13,6 +13,8 @@ export type AddMovieOptions = {
   year?: number;
   description?: string;
   movieId?: string;
+  /** Original client upload filename for Library / Jobs display. */
+  sourceFile?: string;
   /** Custom poster image path; replaces auto-extracted frame when provided. */
   posterSourcePath?: string;
   signal?: AbortSignal;
@@ -33,6 +35,8 @@ export async function addMovie(options: AddMovieOptions) {
     });
 
     const absoluteSource = path.resolve(options.sourcePath);
+    const sourceFile =
+      options.sourceFile?.trim() || path.basename(absoluteSource) || null;
     const result = await transcodeMovie({
       sourcePath: absoluteSource,
       mediaRoot,
@@ -69,6 +73,9 @@ export async function addMovie(options: AddMovieOptions) {
         posterPath: posterRelativePath,
         contentVersion: "1",
         ready: false,
+        cdnUploaded: false,
+        cloudRegistered: false,
+        sourceFile,
       },
       update: {
         title: options.title ?? result.title,
@@ -77,6 +84,9 @@ export async function addMovie(options: AddMovieOptions) {
         runtimeSeconds: result.durationSeconds,
         posterPath: posterRelativePath,
         ready: false,
+        cdnUploaded: false,
+        cloudRegistered: false,
+        sourceFile,
       },
     });
 

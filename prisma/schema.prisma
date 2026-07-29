@@ -66,10 +66,14 @@ model Movie {
   year           Int?
   runtimeSeconds Int?
   posterPath     String?
-  contentVersion String   @default("1")
-  ready          Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  contentVersion   String   @default("1")
+  ready            Boolean  @default(false)
+  cdnUploaded      Boolean  @default(false)
+  cloudRegistered  Boolean  @default(false)
+  /** Original upload filename (operator reference). */
+  sourceFile       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   assets    MovieAsset[]
   subtitles SubtitleTrack[]
@@ -189,10 +193,14 @@ model Episode {
   description    String   @default("")
   runtimeSeconds Int?
   posterPath     String?
-  contentVersion String   @default("1")
-  ready          Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  contentVersion   String   @default("1")
+  ready            Boolean  @default(false)
+  cdnUploaded      Boolean  @default(false)
+  cloudRegistered  Boolean  @default(false)
+  /** Original upload filename (operator reference). */
+  sourceFile       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   season    Season                    @relation(fields: [seasonId], references: [id], onDelete: Cascade)
   assets    EpisodeAsset[]
