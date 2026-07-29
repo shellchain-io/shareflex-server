@@ -1,8 +1,13 @@
 import "dotenv/config";
 import { copyFile, mkdir } from "node:fs/promises";
 import path from "node:path";
+import {
+  episodeRegisterPayloadFromDb,
+  finishCloudPublish,
+} from "./cloud-publish.js";
 import { loadEnv } from "./env.js";
 import { createId } from "./ids.js";
+import type { JobContext } from "./jobs.js";
 import { resolveMediaRoot } from "./movies.js";
 import {
   installPosterFile,
@@ -26,6 +31,7 @@ export type AddEpisodeOptions = {
   showId?: string;
   episodeId?: string;
   signal?: AbortSignal;
+  ctx?: JobContext;
 };
 
 export function parseSeasonEpisode(
@@ -45,6 +51,7 @@ export async function addEpisode(options: AddEpisodeOptions) {
   const config = loadEnv();
   const mediaRoot = resolveMediaRoot(config.MEDIA_ROOT);
   const prisma = createPrismaClient(config.DATABASE_URL);
+  const ctx = options.ctx;
 
   try {
     if (
@@ -55,6 +62,11 @@ export async function addEpisode(options: AddEpisodeOptions) {
     ) {
       throw new Error("Season must be >= 0 and episode must be >= 1.");
     }
+
+    ctx?.setProgress({
+      stage: "encoding",
+      detail: "Encoding HLS (1080 / 720 / 480)…",
+    });
 
     const absoluteSource = path.resolve(options.sourcePath);
     const episodeId = options.episodeId ?? createId("e");
@@ -162,7 +174,11 @@ export async function addEpisode(options: AddEpisodeOptions) {
       title:
         options.episodeTitle ??
         `Episode ${options.episodeNumber}`,
-      ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.signal
+        ? { signal: options.signal }
+        : ctx?.signal
+          ? { signal: ctx.signal }
+          : {}),
     });
 
     const episode = await prisma.episode.upsert({
@@ -264,31 +280,41 @@ export async function addEpisode(options: AddEpisodeOptions) {
       data: { ready: true },
     });
 
-    if (config.R2_ACCOUNT_ID && config.R2_ACCESS_KEY_ID && config.R2_SECRET_ACCESS_KEY) {
-      try {
-        const { uploadDirectoryToR2 } = await import("./r2.js");
-        const localDir = path.join(mediaRoot, "episodes", episode.id);
-        console.log(`Uploading episodes/${episode.id} to R2…`);
-        await uploadDirectoryToR2({
-          config,
-          localDir,
-          keyPrefix: `episodes/${episode.id}`,
-        });
-        if (show.posterPath) {
-          const showPosterDir = path.join(mediaRoot, path.dirname(show.posterPath));
-          await uploadDirectoryToR2({
-            config,
-            localDir: showPosterDir,
-            keyPrefix: path.dirname(show.posterPath).split(path.sep).join("/"),
-          });
-        }
-      } catch (error) {
-        console.warn(
-          "R2 upload failed (episode is encoded locally; retry with npm run publish-r2):",
-          error instanceof Error ? error.message : error,
-        );
-      }
+    // Refresh season for poster path after possible updates.
+    season = await prisma.season.findUniqueOrThrow({ where: { id: season.id } });
+
+    const full = await prisma.episode.findUniqueOrThrow({
+      where: { id: readyEpisode.id },
+      include: {
+        assets: true,
+        subtitles: true,
+        season: { include: { show: true } },
+      },
+    });
+
+    const extraUploads: Array<{ localDir: string; keyPrefix: string }> = [];
+    if (season.posterPath) {
+      extraUploads.push({
+        localDir: path.join(mediaRoot, path.dirname(season.posterPath)),
+        keyPrefix: path.dirname(season.posterPath).split(path.sep).join("/"),
+      });
     }
+    if (readyShow.posterPath) {
+      extraUploads.push({
+        localDir: path.join(mediaRoot, path.dirname(readyShow.posterPath)),
+        keyPrefix: path.dirname(readyShow.posterPath).split(path.sep).join("/"),
+      });
+    }
+
+    const publish = await finishCloudPublish({
+      config,
+      mediaRoot,
+      kind: "episodes",
+      id: full.id,
+      episodePayload: episodeRegisterPayloadFromDb(full),
+      extraUploads,
+      ...(ctx ? { ctx } : {}),
+    });
 
     return {
       show: readyShow,
@@ -297,6 +323,7 @@ export async function addEpisode(options: AddEpisodeOptions) {
       masterRelativePath: result.masterRelativePath,
       ladder: result.ladder.map((rung) => rung.label),
       subtitleCount: result.subtitles.length,
+      publish,
     };
   } finally {
     await prisma.$disconnect();

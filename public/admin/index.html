@@ -458,7 +458,7 @@
       <div class="topbar">
         <div>
           <h1>Library panel</h1>
-          <p class="sub">Movies go one at a time. Episodes: one season thumbnail, then as many videos as you need. Track progress in Jobs.</p>
+          <p class="sub" id="panelSub">Movies go one at a time. Episodes: one season thumbnail, then as many videos as you need. Track progress in Jobs.</p>
         </div>
         <div id="sessionBox" class="hidden">
           <div class="muted" id="who"></div>
@@ -468,27 +468,33 @@
 
       <section id="loginCard" class="card">
         <h2>Owner sign in</h2>
-        <div class="row">
-          <div class="field grow">
-            <label>Email</label>
-            <input id="email" type="email" value="" autocomplete="username" />
+        <form id="loginForm" action="#" method="post" autocomplete="on">
+          <div class="row">
+            <div class="field grow">
+              <label>Email</label>
+              <input id="email" name="email" type="email" value="" autocomplete="username" />
+            </div>
+            <div class="field grow">
+              <label>Password</label>
+              <input id="password" name="password" type="password" value="" autocomplete="current-password" />
+            </div>
+            <div class="field" style="flex:0">
+              <label>&nbsp;</label>
+              <button type="submit" class="btn-primary" id="loginBtn">Sign in</button>
+            </div>
           </div>
-          <div class="field grow">
-            <label>Password</label>
-            <input id="password" type="password" value="" autocomplete="current-password" />
-          </div>
-          <div class="field" style="flex:0">
-            <label>&nbsp;</label>
-            <button class="btn-primary" id="loginBtn">Sign in</button>
-          </div>
-        </div>
+        </form>
         <div class="msg" id="loginMsg"></div>
       </section>
 
       <section id="app" class="hidden">
+        <div id="roleBanner" class="card" style="display:none;margin-bottom:16px;border-color:#c45c26;background:rgba(196,92,38,0.08)">
+          <strong id="roleBannerTitle">Cloud API</strong>
+          <p class="muted" id="roleBannerBody" style="margin:8px 0 0"></p>
+        </div>
         <div class="tabs">
-          <button class="tab active" data-tab="movie">Upload movies</button>
-          <button class="tab" data-tab="episode">Upload episodes</button>
+          <button class="tab active" data-tab="movie" id="tabBtnMovie">Upload movies</button>
+          <button class="tab" data-tab="episode" id="tabBtnEpisode">Upload episodes</button>
           <button class="tab" data-tab="library">Library</button>
           <button class="tab" data-tab="jobs">Jobs</button>
         </div>
@@ -637,6 +643,18 @@
         </section>
 
         <section id="tab-library" class="card hidden">
+          <div id="maintenanceBox" style="margin:0 0 20px;padding:14px 16px;border:1px solid var(--line,#2a2a2a);border-radius:10px">
+            <h2 style="margin:0 0 6px;font-size:16px">Disk cleanup</h2>
+            <p class="muted" style="margin:0 0 12px">
+              Clears leftover uploads on this machine (temp files / failed encodes). Does not delete the database or R2.
+              On GCE after accidental GB uploads, use <strong>Purge all local packages</strong>.
+            </p>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              <button type="button" class="btn-ghost" id="cleanupTempBtn">Clean temp + not-ready</button>
+              <button type="button" class="btn-danger-ghost" id="cleanupAllLocalBtn">Purge all local packages</button>
+            </div>
+            <div class="msg" id="cleanupMsg"></div>
+          </div>
           <h2>Movies</h2>
           <p class="muted" style="margin:0 0 8px">Click a title to see upload / ready status.</p>
           <table>
@@ -653,7 +671,7 @@
 
         <section id="tab-jobs" class="card hidden">
           <h2>Jobs</h2>
-          <p class="muted">Uploads run up to 5 at a time. Encoding runs one at a time on this Mac.</p>
+          <p class="muted" id="jobsHelp">Uploads run up to 5 at a time. Pipeline: encode → R2 CDN → cloud register. Failures stay visible with retry.</p>
           <div class="jobs-subtabs">
             <button type="button" class="jobs-subtab active" data-jobs-tab="progress" id="jobsTabProgress">In progress</button>
             <button type="button" class="jobs-subtab" data-jobs-tab="finished" id="jobsTabFinished">Finished</button>
@@ -704,6 +722,7 @@
       let serverJobs = [];
       let pollTimer = null;
       let jobsView = "progress";
+      let capabilities = null;
       const UPLOAD_CONCURRENCY = 5;
 
       function token() {
@@ -916,6 +935,74 @@
         $("app").classList.remove("hidden");
         $("sessionBox").classList.remove("hidden");
         $("who").textContent = `${user.displayName} · ${user.email}`;
+        void loadCapabilities();
+      }
+
+      async function loadCapabilities() {
+        try {
+          const data = await api("/v1/admin/capabilities");
+          capabilities = data;
+          applyCapabilities(data);
+        } catch (error) {
+          console.warn("capabilities", error);
+        }
+      }
+
+      function applyCapabilities(cap) {
+        const banner = $("roleBanner");
+        const title = $("roleBannerTitle");
+        const body = $("roleBannerBody");
+        const canEncode = Boolean(cap.canEncode);
+        $("tabBtnMovie").style.display = canEncode ? "" : "none";
+        $("tabBtnEpisode").style.display = canEncode ? "" : "none";
+        $("tab-movie").classList.toggle("encode-disabled", !canEncode);
+        $("tab-episode").classList.toggle("encode-disabled", !canEncode);
+
+        if (cap.role === "cloud_api" || !canEncode) {
+          banner.style.display = "";
+          title.textContent = "Cloud API (metadata only)";
+          body.innerHTML =
+            "Do <strong>not</strong> upload videos here — they fill the VM disk and ffmpeg is not installed. " +
+            "Encode on your Mac at <code>http://127.0.0.1:8787/admin/</code> (server-cloud with PUBLISH_TARGET_URL). " +
+            "Pipeline: Mac encode → R2 → register titles on this API. Use <strong>Disk cleanup</strong> below if you already uploaded GB files.";
+          $("panelSub").textContent =
+            "This host serves the app catalog. Publish new titles from Mac admin.";
+          // Jump to library if upload tabs hidden
+          document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+          $("tabBtnMovie").classList.remove("active");
+          document.querySelector('[data-tab="library"]')?.classList.add("active");
+          $("tab-movie").classList.add("hidden");
+          $("tab-episode").classList.add("hidden");
+          $("tab-library").classList.remove("hidden");
+          $("tab-jobs").classList.add("hidden");
+        } else if (cap.publishesToCloud) {
+          banner.style.display = "";
+          title.textContent = "Mac publisher → R2 → cloud";
+          body.textContent =
+            `Encode here, upload to CDN, then register metadata on ${cap.publishTargetUrl}. ` +
+            "Jobs show each stage. If CDN works but register fails, use Register cloud / Publish full in Library.";
+          $("panelSub").textContent =
+            "Mac encode → Cloudflare R2 → GCE catalog. Watch Jobs for stage failures.";
+          $("jobsHelp").textContent =
+            "Stages: encoding → uploading CDN → registering cloud. Failed jobs keep the stage and offer retry.";
+        } else {
+          banner.style.display = "";
+          title.textContent = "Local encode (no cloud target)";
+          body.textContent =
+            "PUBLISH_TARGET_URL is empty — titles stay on this Mac DB only. Set it to your GCE URL to publish the catalog phones use.";
+          $("panelSub").textContent =
+            "Encode locally; set PUBLISH_TARGET_URL to push metadata to GCE.";
+        }
+
+        if (!canEncode) {
+          ["movieUploadBtn", "episodeUploadBtn"].forEach((id) => {
+            const el = $(id);
+            if (el) {
+              el.disabled = true;
+              el.title = "Encode disabled on this host";
+            }
+          });
+        }
       }
       function showLogin(msg) {
         $("loginCard").classList.remove("hidden");
@@ -933,7 +1020,7 @@
         $("pendingToast").classList.toggle("show", uploading);
       }
 
-      function jobStatusMeta(kind, status) {
+      function jobStatusMeta(kind, status, stage) {
         if (kind === "upload") {
           if (status === "queued") return { label: "Queued for uploading", pill: "queued_upload" };
           if (status === "uploading") return { label: "Uploading", pill: "uploading" };
@@ -941,20 +1028,72 @@
           if (status === "cancelled") return { label: "Cancelled", pill: "cancelled" };
           return { label: status, pill: status };
         }
-        if (kind === "publish") {
-          if (status === "queued") return { label: "Queued for CDN", pill: "queued_upload" };
-          if (status === "running") return { label: "Uploading to CDN", pill: "uploading" };
-          if (status === "succeeded") return { label: "CDN uploaded", pill: "succeeded" };
-          if (status === "failed") return { label: "CDN failed", pill: "failed" };
+        if (status === "running" && stage) {
+          const stageLabel = {
+            encoding: "Encoding",
+            uploading_cdn: "Uploading CDN",
+            registering_cloud: "Registering cloud",
+            cleaning: "Cleaning disk",
+          }[stage];
+          if (stageLabel) return { label: stageLabel, pill: "uploading" };
+        }
+        if (status === "failed" && stage && stage !== "queued" && stage !== "done") {
+          return { label: `Failed · ${stage}`, pill: "failed" };
+        }
+        if (kind === "publish" || kind === "register" || kind === "cleanup") {
+          if (status === "queued") return { label: "Queued", pill: "queued_upload" };
+          if (status === "running") return { label: "Running", pill: "uploading" };
+          if (status === "succeeded") {
+            if (kind === "register") return { label: "Cloud registered", pill: "succeeded" };
+            if (kind === "cleanup") return { label: "Cleaned", pill: "succeeded" };
+            return { label: "CDN uploaded", pill: "succeeded" };
+          }
+          if (status === "failed") return { label: "Failed", pill: "failed" };
           if (status === "cancelled") return { label: "Cancelled", pill: "cancelled" };
           return { label: status, pill: status };
         }
         if (status === "queued") return { label: "Queued for encoding", pill: "queued_encode" };
         if (status === "running") return { label: "Encoding", pill: "encoding" };
-        if (status === "succeeded") return { label: "Succeeded", pill: "succeeded" };
+        if (status === "succeeded") {
+          return { label: "Succeeded", pill: "succeeded" };
+        }
         if (status === "failed") return { label: "Failed", pill: "failed" };
         if (status === "cancelled") return { label: "Cancelled", pill: "cancelled" };
         return { label: status, pill: status };
+      }
+
+      function jobRetryActions(job) {
+        if (job.status !== "failed") return "";
+        const r = job.result || {};
+        const movieId = r.movieId;
+        const episodeId = r.episodeId;
+        const failed = r.failedStage || job.stage;
+        const buttons = [];
+        if (failed === "registering_cloud" || (r.r2Uploaded && !r.cloudRegistered)) {
+          if (movieId) {
+            buttons.push(
+              `<button type="button" class="btn-cdn compact" data-retry="register-movie" data-id="${escapeHtml(movieId)}">Retry register</button>`,
+            );
+          }
+          if (episodeId) {
+            buttons.push(
+              `<button type="button" class="btn-cdn compact" data-retry="register-episode" data-id="${escapeHtml(episodeId)}">Retry register</button>`,
+            );
+          }
+        }
+        if (failed === "uploading_cdn" || (movieId || episodeId) && !r.r2Uploaded) {
+          if (movieId) {
+            buttons.push(
+              `<button type="button" class="btn-cdn compact" data-retry="publish-full-movie" data-id="${escapeHtml(movieId)}">Retry CDN+register</button>`,
+            );
+          }
+          if (episodeId) {
+            buttons.push(
+              `<button type="button" class="btn-cdn compact" data-retry="publish-full-episode" data-id="${escapeHtml(episodeId)}">Retry CDN+register</button>`,
+            );
+          }
+        }
+        return buttons.join(" ");
       }
 
       function isInProgressUpload(u) {
@@ -999,19 +1138,28 @@
             </tr>`;
           }),
           ...encodeRows.map((job) => {
-            const meta = jobStatusMeta(job.kind || "encode", job.status);
+            const meta = jobStatusMeta(job.kind || "encode", job.status, job.stage);
             const canCancel = job.status === "queued" || job.status === "running";
+            const r = job.result || {};
+            const flags = [];
+            if (r.r2Uploaded) flags.push("CDN ok");
+            if (r.cloudRegistered) flags.push("cloud ok");
+            if (job.status === "succeeded" && r.r2Uploaded && capabilities?.publishesToCloud && !r.cloudRegistered) {
+              flags.push("cloud missing");
+            }
+            const flagText = flags.length ? ` · ${flags.join(" · ")}` : "";
+            const retry = jobRetryActions(job);
             return `<tr>
               <td><strong>${escapeHtml(job.title)}</strong><div class="muted">${escapeHtml(job.detail)}${
                 job.error ? ` · ${escapeHtml(job.error)}` : ""
-              }</div></td>
+              }${flagText}</div></td>
               <td>${escapeHtml(job.kind === "publish" ? "cdn" : job.kind)}</td>
               <td><span class="pill ${meta.pill}">${meta.label}</span></td>
               <td class="muted">${new Date(job.updatedAt).toLocaleString()}</td>
               <td>${
                 canCancel
                   ? `<button type="button" class="btn-cancel-job" data-cancel-encode="${escapeHtml(job.id)}">Cancel</button>`
-                  : ""
+                  : retry
               }</td>
             </tr>`;
           }),
@@ -1840,7 +1988,13 @@
               const reuploadBtn = ep.ready
                 ? `<button type="button" class="btn-cdn compact" data-action="publish-episode" data-id="${escapeHtml(
                     ep.id,
-                  )}" data-label="${escapeHtml(code)}">Reupload CDN</button>`
+                  )}" data-label="${escapeHtml(code)}">Reupload CDN</button>
+                   <button type="button" class="btn-cdn compact" data-action="publish-full-episode" data-id="${escapeHtml(
+                    ep.id,
+                  )}" data-label="${escapeHtml(code)}">CDN+cloud</button>
+                   <button type="button" class="btn-cdn compact" data-action="register-episode" data-id="${escapeHtml(
+                    ep.id,
+                  )}" data-label="${escapeHtml(code)}">Register</button>`
                 : "";
               return `<div class="ep-row">
                 <div>
@@ -1958,7 +2112,13 @@
           const reuploadBtn = m.ready
             ? `<button type="button" class="btn-cdn" data-action="publish-movie" data-id="${escapeHtml(
                 m.id,
-              )}" data-label="${escapeHtml(m.title)}">Reupload to CDN</button>`
+              )}" data-label="${escapeHtml(m.title)}">Reupload CDN</button>
+               <button type="button" class="btn-cdn" data-action="publish-full-movie" data-id="${escapeHtml(
+                m.id,
+              )}" data-label="${escapeHtml(m.title)}">Publish CDN+cloud</button>
+               <button type="button" class="btn-cdn" data-action="register-movie" data-id="${escapeHtml(
+                m.id,
+              )}" data-label="${escapeHtml(m.title)}">Register cloud</button>`
             : "";
           $("detailBody").innerHTML = `
             <div class="detail-meta">
@@ -2040,12 +2200,20 @@
         if (
           action === "publish-movie" ||
           action === "publish-episode" ||
-          action === "publish-season"
+          action === "publish-season" ||
+          action === "publish-full-movie" ||
+          action === "publish-full-episode" ||
+          action === "register-movie" ||
+          action === "register-episode"
         ) {
           const confirms = {
             "publish-movie": `Reupload “${label}” to Cloudflare CDN (R2)?`,
             "publish-episode": `Reupload ${label} to Cloudflare CDN (R2)?`,
             "publish-season": `Reupload all ready episodes in “${label}” to CDN?`,
+            "publish-full-movie": `Upload “${label}” to CDN and register on cloud API?`,
+            "publish-full-episode": `Upload ${label} to CDN and register on cloud API?`,
+            "register-movie": `Register “${label}” metadata on cloud API (CDN must already have the files)?`,
+            "register-episode": `Register ${label} metadata on cloud API (CDN must already have the files)?`,
           };
           if (!confirm(confirms[action])) return;
           libraryActionBusy = true;
@@ -2056,6 +2224,22 @@
               });
             } else if (action === "publish-episode") {
               await api(`/v1/admin/library/episodes/${encodeURIComponent(id)}/publish-r2`, {
+                method: "POST",
+              });
+            } else if (action === "publish-full-movie") {
+              await api(`/v1/admin/library/movies/${encodeURIComponent(id)}/publish-full`, {
+                method: "POST",
+              });
+            } else if (action === "publish-full-episode") {
+              await api(`/v1/admin/library/episodes/${encodeURIComponent(id)}/publish-full`, {
+                method: "POST",
+              });
+            } else if (action === "register-movie") {
+              await api(`/v1/admin/library/movies/${encodeURIComponent(id)}/register-cloud`, {
+                method: "POST",
+              });
+            } else if (action === "register-episode") {
+              await api(`/v1/admin/library/episodes/${encodeURIComponent(id)}/register-cloud`, {
                 method: "POST",
               });
             } else {
@@ -2069,7 +2253,7 @@
             await refreshJobs();
             startJobPoll();
           } catch (error) {
-            alert(error.message || "CDN reupload failed to start.");
+            alert(error.message || "Publish action failed to start.");
           } finally {
             libraryActionBusy = false;
           }
@@ -2253,7 +2437,14 @@
           renderEpisodeList();
         }
       });
-      $("loginBtn").addEventListener("click", () => void login());
+      $("loginForm").addEventListener("submit", (event) => {
+        event.preventDefault();
+        void login();
+      });
+      $("loginBtn").addEventListener("click", (event) => {
+        event.preventDefault();
+        void login();
+      });
       $("logoutBtn").addEventListener("click", () => {
         clearSession();
         showLogin();
@@ -2271,8 +2462,47 @@
         const encodeBtn = event.target.closest("[data-cancel-encode]");
         if (encodeBtn) {
           void cancelEncodeJob(encodeBtn.dataset.cancelEncode);
+          return;
+        }
+        const retryBtn = event.target.closest("[data-retry]");
+        if (retryBtn) {
+          void runLibraryAction(
+            retryBtn.dataset.retry,
+            retryBtn.dataset.id,
+            "retry",
+          );
         }
       });
+      async function runCleanup(purgeAllLocalPackages) {
+        const msg = $("cleanupMsg");
+        const confirmText = purgeAllLocalPackages
+          ? "Delete ALL local movies/episodes folders on this machine (DB + R2 stay)? Use on GCE after accidental GB uploads."
+          : "Delete temp uploads and not-ready local packages on this machine?";
+        if (!confirm(confirmText)) return;
+        msg.textContent = "Queued cleanup…";
+        msg.className = "msg";
+        try {
+          await api("/v1/admin/maintenance/cleanup-local-media", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              purgeTemp: true,
+              purgeNotReady: true,
+              purgeAllLocalPackages: Boolean(purgeAllLocalPackages),
+            }),
+          });
+          switchTab("jobs");
+          await refreshJobs();
+          startJobPoll();
+          msg.textContent = "Cleanup job queued — watch Jobs for freed space.";
+          msg.className = "msg ok";
+        } catch (error) {
+          msg.textContent = error.message || "Cleanup failed.";
+          msg.className = "msg error";
+        }
+      }
+      $("cleanupTempBtn").addEventListener("click", () => void runCleanup(false));
+      $("cleanupAllLocalBtn").addEventListener("click", () => void runCleanup(true));
       $("detailCloseBtn").addEventListener("click", closeDetailModal);
       $("detailModal").addEventListener("click", (event) => {
         if (event.target === $("detailModal")) closeDetailModal();

@@ -1,6 +1,8 @@
 import "dotenv/config";
 import path from "node:path";
+import { finishCloudPublish, movieRegisterPayloadFromDb } from "./cloud-publish.js";
 import { loadEnv } from "./env.js";
+import type { JobContext } from "./jobs.js";
 import { resolveMediaRoot } from "./movies.js";
 import { installPosterFile, moviePosterRelativePath } from "./posters.js";
 import { createPrismaClient } from "./prisma.js";
@@ -15,14 +17,21 @@ export type AddMovieOptions = {
   /** Custom poster image path; replaces auto-extracted frame when provided. */
   posterSourcePath?: string;
   signal?: AbortSignal;
+  ctx?: JobContext;
 };
 
 export async function addMovie(options: AddMovieOptions) {
   const config = loadEnv();
   const mediaRoot = resolveMediaRoot(config.MEDIA_ROOT);
   const prisma = createPrismaClient(config.DATABASE_URL);
+  const ctx = options.ctx;
 
   try {
+    ctx?.setProgress({
+      stage: "encoding",
+      detail: "Encoding HLS (1080 / 720 / 480)…",
+    });
+
     const absoluteSource = path.resolve(options.sourcePath);
     const result = await transcodeMovie({
       sourcePath: absoluteSource,
@@ -30,6 +39,7 @@ export async function addMovie(options: AddMovieOptions) {
       ...(options.title ? { title: options.title } : {}),
       ...(options.movieId ? { movieId: options.movieId } : {}),
       ...(options.signal ? { signal: options.signal } : {}),
+      ...(ctx?.signal && !options.signal ? { signal: ctx.signal } : {}),
     });
 
     let posterRelativePath = result.posterRelativePath;
@@ -116,29 +126,26 @@ export async function addMovie(options: AddMovieOptions) {
       data: { ready: true },
     });
 
-    if (config.R2_ACCOUNT_ID && config.R2_ACCESS_KEY_ID && config.R2_SECRET_ACCESS_KEY) {
-      try {
-        const { uploadDirectoryToR2 } = await import("./r2.js");
-        const localDir = path.join(mediaRoot, "movies", movie.id);
-        console.log(`Uploading movies/${movie.id} to R2…`);
-        await uploadDirectoryToR2({
-          config,
-          localDir,
-          keyPrefix: `movies/${movie.id}`,
-        });
-      } catch (error) {
-        console.warn(
-          "R2 upload failed (movie is encoded locally; retry with npm run publish-r2):",
-          error instanceof Error ? error.message : error,
-        );
-      }
-    }
+    const full = await prisma.movie.findUniqueOrThrow({
+      where: { id: readyMovie.id },
+      include: { assets: true, subtitles: true },
+    });
+
+    const publish = await finishCloudPublish({
+      config,
+      mediaRoot,
+      kind: "movies",
+      id: full.id,
+      moviePayload: movieRegisterPayloadFromDb(full),
+      ...(ctx ? { ctx } : {}),
+    });
 
     return {
       movie: readyMovie,
       masterRelativePath: result.masterRelativePath,
       ladder: result.ladder.map((rung) => rung.label),
       subtitleCount: result.subtitles.length,
+      publish,
     };
   } finally {
     await prisma.$disconnect();

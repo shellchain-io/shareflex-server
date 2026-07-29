@@ -4,6 +4,17 @@ import path from "node:path";
 import { finished, pipeline } from "node:stream/promises";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import {
+  cleanupLocalMedia,
+  formatBytes,
+} from "../lib/cleanup-local-media.js";
+import {
+  episodeRegisterPayloadFromDb,
+  finishCloudPublish,
+  movieRegisterPayloadFromDb,
+  registerEpisodeOnCloud,
+  registerMovieOnCloud,
+} from "../lib/cloud-publish.js";
+import {
   deleteMovie,
   deleteSeason,
   deleteShow,
@@ -22,7 +33,25 @@ import {
   isImageFilename,
   seasonPosterRelativePath,
 } from "../lib/posters.js";
+import {
+  registerEpisodeMetadata,
+  registerMovieMetadata,
+  type RegisterEpisodeInput,
+  type RegisterMovieInput,
+} from "../lib/register-library.js";
 import { serializeShow, showPosterRelativePath } from "../lib/shows.js";
+import { ffmpegAvailable } from "../lib/ffmpeg.js";
+
+function rejectEncodeDisabled(config: { ALLOW_LOCAL_ENCODE: boolean }) {
+  if (config.ALLOW_LOCAL_ENCODE) {
+    return null;
+  }
+  return {
+    error: "encode_disabled",
+    message:
+      "Video encode is disabled on this API host (GCE). Use Mac admin at http://127.0.0.1:8787/admin/ with ALLOW_LOCAL_ENCODE=true — encode → R2 → register here. Or free disk: Library → Clean local media.",
+  } as const;
+}
 
 const ALLOWED_EXT = new Set([
   ".mp4",
@@ -100,7 +129,117 @@ async function readVideoAndThumbnail(request: FastifyRequest, mediaRoot: string)
   return { fields, video, thumbnail };
 }
 
+/** Drain multipart without writing GB files to disk (encode-disabled hosts). */
+async function discardAllMultipart(request: FastifyRequest): Promise<void> {
+  for await (const part of request.parts()) {
+    if (part.type === "file") {
+      await discardUpload(part.file);
+    }
+  }
+}
+
 const adminRoutes: FastifyPluginAsync = async (app) => {
+  app.get(
+    "/v1/admin/capabilities",
+    { onRequest: [app.requireOwner] },
+    async () => {
+      const hasFfmpeg = await ffmpegAvailable();
+      const r2Configured = Boolean(
+        app.config.R2_ACCOUNT_ID &&
+          app.config.R2_ACCESS_KEY_ID &&
+          app.config.R2_SECRET_ACCESS_KEY,
+      );
+      const publishTarget = app.config.PUBLISH_TARGET_URL?.trim() || "";
+      return {
+        allowLocalEncode: app.config.ALLOW_LOCAL_ENCODE,
+        ffmpegAvailable: hasFfmpeg,
+        canEncode: app.config.ALLOW_LOCAL_ENCODE && hasFfmpeg,
+        r2Configured,
+        mediaPublicBaseUrl: app.config.MEDIA_PUBLIC_BASE_URL || "",
+        publishTargetUrl: publishTarget,
+        publishesToCloud: Boolean(publishTarget),
+        role: publishTarget
+          ? "mac_publisher"
+          : app.config.ALLOW_LOCAL_ENCODE
+            ? "local_encode"
+            : "cloud_api",
+      };
+    },
+  );
+
+  app.post(
+    "/v1/admin/maintenance/cleanup-local-media",
+    { onRequest: [app.requireOwner] },
+    async (request, reply) => {
+      const body = (request.body ?? {}) as {
+        purgeTemp?: boolean;
+        purgeNotReady?: boolean;
+        purgeAllLocalPackages?: boolean;
+      };
+      const job = enqueueAdminJob({
+        kind: "cleanup",
+        title: "Clean local media",
+        detail: body.purgeAllLocalPackages
+          ? "Purging all local packages + temp uploads"
+          : "Purging temp uploads + not-ready packages",
+        run: async (ctx) => {
+          ctx.setProgress({ stage: "cleaning", detail: "Scanning media root…" });
+          const result = await cleanupLocalMedia({
+            prisma: app.prisma,
+            mediaRoot: app.mediaRoot,
+            purgeTemp: body.purgeTemp !== false,
+            purgeNotReady: body.purgeNotReady !== false,
+            purgeAllLocalPackages: Boolean(body.purgeAllLocalPackages),
+          });
+          return {
+            ...result,
+            freedLabel: formatBytes(result.freedBytes),
+          };
+        },
+      });
+      return reply.code(202).send({ job });
+    },
+  );
+
+  app.post(
+    "/v1/admin/library/register/movie",
+    { onRequest: [app.requireOwner] },
+    async (request, reply) => {
+      const body = request.body as RegisterMovieInput;
+      try {
+        const movie = await registerMovieMetadata(app.prisma, body);
+        return { movie: serializeMovie(movie), registered: true };
+      } catch (error) {
+        return reply.code(400).send({
+          error: "register_failed",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  );
+
+  app.post(
+    "/v1/admin/library/register/episode",
+    { onRequest: [app.requireOwner] },
+    async (request, reply) => {
+      const body = request.body as RegisterEpisodeInput;
+      try {
+        const result = await registerEpisodeMetadata(app.prisma, body);
+        return {
+          show: serializeShow(result.show),
+          seasonId: result.season.id,
+          episodeId: result.episode.id,
+          registered: true,
+        };
+      } catch (error) {
+        return reply.code(400).send({
+          error: "register_failed",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  );
+
   app.get(
     "/v1/admin/library",
     {
@@ -549,6 +688,12 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (request, reply) => {
+      const denied = rejectEncodeDisabled(app.config);
+      if (denied) {
+        await discardAllMultipart(request);
+        return reply.code(403).send(denied);
+      }
+
       const { fields, video, thumbnail } = await readVideoAndThumbnail(
         request,
         app.mediaRoot,
@@ -610,14 +755,15 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         kind: "movie",
         title,
         detail: path.basename(savedPath),
-        run: async (signal) => {
+        run: async (ctx) => {
           try {
             const result = await addMovie({
               sourcePath: savedPath,
               title,
               description,
               posterSourcePath: thumbPath,
-              signal,
+              signal: ctx.signal,
+              ctx,
               ...(year !== undefined ? { year } : {}),
             });
             return {
@@ -625,6 +771,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
               title: result.movie.title,
               ready: result.movie.ready,
               ladder: result.ladder,
+              ...(result.publish ?? {}),
             };
           } finally {
             await unlink(savedPath).catch(() => undefined);
@@ -649,6 +796,12 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (request, reply) => {
+      const denied = rejectEncodeDisabled(app.config);
+      if (denied) {
+        await discardAllMultipart(request);
+        return reply.code(403).send(denied);
+      }
+
       const { fields, video, thumbnail } = await readVideoAndThumbnail(
         request,
         app.mediaRoot,
@@ -837,7 +990,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         kind: "episode",
         title: `${showTitle} · S${String(seasonNumber).padStart(2, "0")}E${String(episodeNumber).padStart(2, "0")}`,
         detail: path.basename(savedPath),
-        run: async (signal) => {
+        run: async (ctx) => {
           try {
             const result = await addEpisode({
               sourcePath: savedPath,
@@ -846,7 +999,8 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
               seasonNumber,
               episodeNumber,
               description,
-              signal,
+              signal: ctx.signal,
+              ctx,
               ...(seasonDescription ? { seasonDescription } : {}),
               ...(thumbPath ? { seasonPosterSourcePath: thumbPath } : {}),
               ...(episodeTitle ? { episodeTitle } : {}),
@@ -861,6 +1015,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
               episodeNumber: result.episode.episodeNumber,
               ready: result.episode.ready,
               ladder: result.ladder,
+              ...(result.publish ?? {}),
             };
           } finally {
             await unlink(savedPath).catch(() => undefined);
@@ -898,15 +1053,65 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         kind: "publish",
         title: movie.title,
         detail: `CDN reupload · movie`,
-        run: async (signal) => {
+        run: async (ctx) => {
+          ctx.setProgress({ stage: "uploading_cdn", detail: "Uploading movie to R2…" });
           const result = await publishLocalPackageToR2({
             config: app.config,
             mediaRoot: app.mediaRoot,
             kind: "movies",
             id: movie.id,
-            signal,
+            signal: ctx.signal,
           });
-          return { movieId: movie.id, ...result };
+          return { movieId: movie.id, r2Uploaded: true, ...result };
+        },
+      });
+
+      return reply.code(202).send({ job });
+    },
+  );
+
+  app.post(
+    "/v1/admin/library/movies/:id/register-cloud",
+    { onRequest: [app.requireOwner] },
+    async (request, reply) => {
+      if (!app.config.PUBLISH_TARGET_URL?.trim()) {
+        return reply.code(400).send({
+          error: "no_publish_target",
+          message:
+            "Set PUBLISH_TARGET_URL in Mac .env to your GCE API (e.g. http://34.47.238.195:8787).",
+        });
+      }
+      const { id } = request.params as { id: string };
+      const movie = await app.prisma.movie.findUnique({
+        where: { id },
+        include: { assets: true, subtitles: true },
+      });
+      if (!movie) {
+        return reply.code(404).send({ error: "not_found", message: "Movie not found." });
+      }
+      if (!movie.ready || movie.assets.length === 0) {
+        return reply.code(400).send({
+          error: "not_ready",
+          message: "Encode and CDN-upload first, then register on cloud.",
+        });
+      }
+
+      const job = enqueueAdminJob({
+        kind: "register",
+        title: movie.title,
+        detail: "Register metadata on cloud API",
+        run: async (ctx) => {
+          ctx.setProgress({
+            stage: "registering_cloud",
+            detail: `POST ${app.config.PUBLISH_TARGET_URL}`,
+            result: { movieId: movie.id, r2Uploaded: true, cloudRegistered: false },
+          });
+          await registerMovieOnCloud(app.config, movieRegisterPayloadFromDb(movie));
+          return {
+            movieId: movie.id,
+            r2Uploaded: true,
+            cloudRegistered: true,
+          };
         },
       });
 
@@ -934,15 +1139,189 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         kind: "publish",
         title: episode.title,
         detail: `CDN reupload · episode`,
-        run: async (signal) => {
+        run: async (ctx) => {
+          ctx.setProgress({ stage: "uploading_cdn", detail: "Uploading episode to R2…" });
           const result = await publishLocalPackageToR2({
             config: app.config,
             mediaRoot: app.mediaRoot,
             kind: "episodes",
             id: episode.id,
-            signal,
+            signal: ctx.signal,
           });
-          return { episodeId: episode.id, ...result };
+          return { episodeId: episode.id, r2Uploaded: true, ...result };
+        },
+      });
+
+      return reply.code(202).send({ job });
+    },
+  );
+
+  app.post(
+    "/v1/admin/library/episodes/:id/register-cloud",
+    { onRequest: [app.requireOwner] },
+    async (request, reply) => {
+      if (!app.config.PUBLISH_TARGET_URL?.trim()) {
+        return reply.code(400).send({
+          error: "no_publish_target",
+          message:
+            "Set PUBLISH_TARGET_URL in Mac .env to your GCE API (e.g. http://34.47.238.195:8787).",
+        });
+      }
+      const { id } = request.params as { id: string };
+      const episode = await app.prisma.episode.findUnique({
+        where: { id },
+        include: {
+          assets: true,
+          subtitles: true,
+          season: { include: { show: true } },
+        },
+      });
+      if (!episode) {
+        return reply.code(404).send({ error: "not_found", message: "Episode not found." });
+      }
+      if (!episode.ready || episode.assets.length === 0) {
+        return reply.code(400).send({
+          error: "not_ready",
+          message: "Encode and CDN-upload first, then register on cloud.",
+        });
+      }
+
+      const job = enqueueAdminJob({
+        kind: "register",
+        title: episode.title,
+        detail: "Register metadata on cloud API",
+        run: async (ctx) => {
+          ctx.setProgress({
+            stage: "registering_cloud",
+            detail: `POST ${app.config.PUBLISH_TARGET_URL}`,
+            result: {
+              episodeId: episode.id,
+              showId: episode.season.show.id,
+              r2Uploaded: true,
+              cloudRegistered: false,
+            },
+          });
+          await registerEpisodeOnCloud(
+            app.config,
+            episodeRegisterPayloadFromDb(episode),
+          );
+          return {
+            episodeId: episode.id,
+            showId: episode.season.show.id,
+            r2Uploaded: true,
+            cloudRegistered: true,
+          };
+        },
+      });
+
+      return reply.code(202).send({ job });
+    },
+  );
+
+  app.post(
+    "/v1/admin/library/movies/:id/publish-full",
+    { onRequest: [app.requireOwner] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const movie = await app.prisma.movie.findUnique({
+        where: { id },
+        include: { assets: true, subtitles: true },
+      });
+      if (!movie) {
+        return reply.code(404).send({ error: "not_found", message: "Movie not found." });
+      }
+      if (!movie.ready) {
+        return reply.code(400).send({
+          error: "not_ready",
+          message: "Encode this movie first.",
+        });
+      }
+
+      const job = enqueueAdminJob({
+        kind: "publish",
+        title: movie.title,
+        detail: "CDN + cloud register",
+        run: async (ctx) => {
+          const publish = await finishCloudPublish({
+            config: app.config,
+            mediaRoot: app.mediaRoot,
+            kind: "movies",
+            id: movie.id,
+            ctx,
+            moviePayload: movieRegisterPayloadFromDb(movie),
+          });
+          return { movieId: movie.id, ...publish };
+        },
+      });
+
+      return reply.code(202).send({ job });
+    },
+  );
+
+  app.post(
+    "/v1/admin/library/episodes/:id/publish-full",
+    { onRequest: [app.requireOwner] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const episode = await app.prisma.episode.findUnique({
+        where: { id },
+        include: {
+          assets: true,
+          subtitles: true,
+          season: { include: { show: true } },
+        },
+      });
+      if (!episode) {
+        return reply.code(404).send({ error: "not_found", message: "Episode not found." });
+      }
+      if (!episode.ready) {
+        return reply.code(400).send({
+          error: "not_ready",
+          message: "Encode this episode first.",
+        });
+      }
+
+      const extraUploads: Array<{ localDir: string; keyPrefix: string }> = [];
+      if (episode.season.posterPath) {
+        extraUploads.push({
+          localDir: path.join(
+            app.mediaRoot,
+            path.dirname(episode.season.posterPath),
+          ),
+          keyPrefix: path
+            .dirname(episode.season.posterPath)
+            .split(path.sep)
+            .join("/"),
+        });
+      }
+      if (episode.season.show.posterPath) {
+        extraUploads.push({
+          localDir: path.join(
+            app.mediaRoot,
+            path.dirname(episode.season.show.posterPath),
+          ),
+          keyPrefix: path
+            .dirname(episode.season.show.posterPath)
+            .split(path.sep)
+            .join("/"),
+        });
+      }
+
+      const job = enqueueAdminJob({
+        kind: "publish",
+        title: episode.title,
+        detail: "CDN + cloud register",
+        run: async (ctx) => {
+          const publish = await finishCloudPublish({
+            config: app.config,
+            mediaRoot: app.mediaRoot,
+            kind: "episodes",
+            id: episode.id,
+            ctx,
+            episodePayload: episodeRegisterPayloadFromDb(episode),
+            extraUploads,
+          });
+          return { episodeId: episode.id, ...publish };
         },
       });
 
@@ -977,15 +1356,16 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
           kind: "publish",
           title: ep.title,
           detail: `CDN reupload · S${String(season.seasonNumber).padStart(2, "0")}E${String(ep.episodeNumber).padStart(2, "0")}`,
-          run: async (signal) => {
+          run: async (ctx) => {
+            ctx.setProgress({ stage: "uploading_cdn" });
             const result = await publishLocalPackageToR2({
               config: app.config,
               mediaRoot: app.mediaRoot,
               kind: "episodes",
               id: ep.id,
-              signal,
+              signal: ctx.signal,
             });
-            return { episodeId: ep.id, ...result };
+            return { episodeId: ep.id, r2Uploaded: true, ...result };
           },
         }),
       );
@@ -996,15 +1376,16 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             kind: "publish",
             title: season.show.title,
             detail: `CDN reupload · season poster`,
-            run: async (signal) => {
+            run: async (ctx) => {
+              ctx.setProgress({ stage: "uploading_cdn" });
               const result = await publishLocalPackageToR2({
                 config: app.config,
                 mediaRoot: app.mediaRoot,
                 kind: "seasons",
                 id: season.id,
-                signal,
+                signal: ctx.signal,
               });
-              return { seasonId: season.id, ...result };
+              return { seasonId: season.id, r2Uploaded: true, ...result };
             },
           }),
         );

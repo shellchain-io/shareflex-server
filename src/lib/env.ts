@@ -18,6 +18,22 @@ const envSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional().default(""),
   R2_BUCKET: z.string().optional().default("shareflex-media"),
   R2_ENDPOINT: z.string().optional().default(""),
+  /**
+   * When false (GCE), reject multipart video encode uploads.
+   * Encode only on Mac with ALLOW_LOCAL_ENCODE=true.
+   */
+  ALLOW_LOCAL_ENCODE: z
+    .enum(["true", "false", "1", "0", ""])
+    .optional()
+    .default("true")
+    .transform((v) => v === "" || v === "true" || v === "1"),
+  /**
+   * Mac publisher: after R2 upload, POST metadata here (GCE API base URL).
+   * Empty on GCE itself.
+   */
+  PUBLISH_TARGET_URL: z.string().optional().default(""),
+  PUBLISH_TARGET_EMAIL: z.string().optional().default(""),
+  PUBLISH_TARGET_PASSWORD: z.string().optional().default(""),
   SEED_USER_1_EMAIL: z.string().email(),
   SEED_USER_1_PASSWORD: z.string().min(8),
   SEED_USER_1_NAME: z.string().min(1),

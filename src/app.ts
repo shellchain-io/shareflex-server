@@ -79,6 +79,11 @@ export async function buildApp(config: Env) {
 
   app.get("/health", async () => ({ ok: true, service: "shareflex-server" }));
 
+  // Safari password manager may navigate here after autofill — send them back to admin.
+  app.get("/.well-known/change-password", async (_request, reply) =>
+    reply.redirect("/admin/"),
+  );
+
   await app.register(authRoutes);
   await app.register(movieRoutes);
   await app.register(showRoutes);
