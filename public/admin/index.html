@@ -671,7 +671,7 @@
 
         <section id="tab-jobs" class="card hidden">
           <h2>Jobs</h2>
-          <p class="muted" id="jobsHelp">Uploads run up to 5 at a time. Pipeline: encode → R2 CDN → cloud register. Failures stay visible with retry.</p>
+          <p class="muted" id="jobsHelp">Encode one at a time (next starts when encode finishes). CDN uploads are manual and run in parallel (up to 4). Cancel encode = delete; cancel upload = keep local and retry.</p>
           <div class="jobs-subtabs">
             <button type="button" class="jobs-subtab active" data-jobs-tab="progress" id="jobsTabProgress">In progress</button>
             <button type="button" class="jobs-subtab" data-jobs-tab="finished" id="jobsTabFinished">Finished</button>
@@ -979,12 +979,11 @@
           banner.style.display = "";
           title.textContent = "Mac publisher → R2 → cloud";
           body.textContent =
-            `Encode here, upload to CDN, then register metadata on ${cap.publishTargetUrl}. ` +
-            "Jobs show each stage. If CDN works but register fails, use Register cloud / Publish full in Library.";
+            `Encode here (one at a time). When encode finishes, press Upload CDN — uploads run in parallel and do not block the next encode. Target: ${cap.publishTargetUrl}`;
           $("panelSub").textContent =
-            "Mac encode → Cloudflare R2 → GCE catalog. Watch Jobs for stage failures.";
+            "Mac encode → press Upload CDN → R2 + GCE. Jobs show progress.";
           $("jobsHelp").textContent =
-            "Stages: encoding → uploading CDN → registering cloud. Failed jobs keep the stage and offer retry.";
+            "Encode serial; CDN upload parallel (manual button). Cancel encode deletes; cancel upload keeps local files.";
         } else {
           banner.style.display = "";
           title.textContent = "Local encode (no cloud target)";
@@ -1028,6 +1027,9 @@
           if (status === "cancelled") return { label: "Cancelled", pill: "cancelled" };
           return { label: status, pill: status };
         }
+        if (status === "awaiting_upload") {
+          return { label: "Ready — upload CDN", pill: "queued_upload" };
+        }
         if (status === "running" && stage) {
           const stageLabel = {
             encoding: "Encoding",
@@ -1041,8 +1043,8 @@
           return { label: `Failed · ${stage}`, pill: "failed" };
         }
         if (kind === "publish" || kind === "register" || kind === "cleanup") {
-          if (status === "queued") return { label: "Queued", pill: "queued_upload" };
-          if (status === "running") return { label: "Running", pill: "uploading" };
+          if (status === "queued") return { label: "Queued for CDN", pill: "queued_upload" };
+          if (status === "running") return { label: "Uploading CDN", pill: "uploading" };
           if (status === "succeeded") {
             if (kind === "register") return { label: "Cloud registered", pill: "succeeded" };
             if (kind === "cleanup") return { label: "Cleaned", pill: "succeeded" };
@@ -1063,6 +1065,10 @@
       }
 
       function jobRetryActions(job) {
+        if (job.status === "awaiting_upload") {
+          return `<button type="button" class="btn-cdn compact" data-upload-job="${escapeHtml(job.id)}">Upload CDN</button>
+            <button type="button" class="btn-cancel-job" data-cancel-encode="${escapeHtml(job.id)}">Dismiss</button>`;
+        }
         if (job.status !== "failed") return "";
         const r = job.result || {};
         const movieId = r.movieId;
@@ -1081,15 +1087,10 @@
             );
           }
         }
-        if (failed === "uploading_cdn" || (movieId || episodeId) && !r.r2Uploaded) {
-          if (movieId) {
+        if (failed === "uploading_cdn" || ((movieId || episodeId) && !r.r2Uploaded)) {
+          if (job.id) {
             buttons.push(
-              `<button type="button" class="btn-cdn compact" data-retry="publish-full-movie" data-id="${escapeHtml(movieId)}">Retry CDN+register</button>`,
-            );
-          }
-          if (episodeId) {
-            buttons.push(
-              `<button type="button" class="btn-cdn compact" data-retry="publish-full-episode" data-id="${escapeHtml(episodeId)}">Retry CDN+register</button>`,
+              `<button type="button" class="btn-cdn compact" data-upload-job="${escapeHtml(job.id)}">Retry Upload CDN</button>`,
             );
           }
         }
@@ -1100,7 +1101,11 @@
         return u.status === "queued" || u.status === "uploading";
       }
       function isInProgressServer(j) {
-        return j.status === "queued" || j.status === "running";
+        return (
+          j.status === "queued" ||
+          j.status === "running" ||
+          j.status === "awaiting_upload"
+        );
       }
       function isFinishedUpload(u) {
         return u.status === "failed" || u.status === "cancelled";
@@ -1139,28 +1144,30 @@
           }),
           ...encodeRows.map((job) => {
             const meta = jobStatusMeta(job.kind || "encode", job.status, job.stage);
-            const canCancel = job.status === "queued" || job.status === "running";
             const r = job.result || {};
             const flags = [];
             if (r.r2Uploaded) flags.push("CDN ok");
             if (r.cloudRegistered) flags.push("cloud ok");
-            if (job.status === "succeeded" && r.r2Uploaded && capabilities?.publishesToCloud && !r.cloudRegistered) {
-              flags.push("cloud missing");
-            }
             const flagText = flags.length ? ` · ${flags.join(" · ")}` : "";
+            const progressText =
+              job.status === "running" && job.progress != null
+                ? ` · ${job.progress}%`
+                : "";
             const retry = jobRetryActions(job);
+            const cancelBtn =
+              job.status === "queued" || job.status === "running"
+                ? `<button type="button" class="btn-cancel-job" data-cancel-encode="${escapeHtml(job.id)}">Cancel</button>`
+                : "";
             return `<tr>
-              <td><strong>${escapeHtml(job.title)}</strong><div class="muted">${escapeHtml(job.detail)}${
+              <td><strong>${escapeHtml(job.title)}</strong><div class="muted">${escapeHtml(job.detail)}${progressText}${
                 job.error ? ` · ${escapeHtml(job.error)}` : ""
               }${flagText}</div></td>
               <td>${escapeHtml(job.kind === "publish" ? "cdn" : job.kind)}</td>
-              <td><span class="pill ${meta.pill}">${meta.label}</span></td>
+              <td><span class="pill ${meta.pill}">${meta.label}${
+                job.status === "running" && job.progress != null ? ` ${job.progress}%` : ""
+              }</span></td>
               <td class="muted">${new Date(job.updatedAt).toLocaleString()}</td>
-              <td>${
-                canCancel
-                  ? `<button type="button" class="btn-cancel-job" data-cancel-encode="${escapeHtml(job.id)}">Cancel</button>`
-                  : retry
-              }</td>
+              <td>${retry || cancelBtn}</td>
             </tr>`;
           }),
         ];
@@ -2464,6 +2471,11 @@
           void cancelEncodeJob(encodeBtn.dataset.cancelEncode);
           return;
         }
+        const uploadJobBtn = event.target.closest("[data-upload-job]");
+        if (uploadJobBtn) {
+          void startJobCdnUpload(uploadJobBtn.dataset.uploadJob);
+          return;
+        }
         const retryBtn = event.target.closest("[data-retry]");
         if (retryBtn) {
           void runLibraryAction(
@@ -2473,6 +2485,18 @@
           );
         }
       });
+
+      async function startJobCdnUpload(jobId) {
+        try {
+          await api(`/v1/admin/jobs/${encodeURIComponent(jobId)}/upload-cdn`, {
+            method: "POST",
+          });
+          await refreshJobs();
+          startJobPoll();
+        } catch (error) {
+          alert(error.message || "Couldn’t start CDN upload.");
+        }
+      }
       async function runCleanup(purgeAllLocalPackages) {
         const msg = $("cleanupMsg");
         const confirmText = purgeAllLocalPackages

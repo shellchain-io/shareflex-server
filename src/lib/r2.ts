@@ -73,37 +73,73 @@ async function listFilesRecursive(dir: string): Promise<string[]> {
   return out;
 }
 
-/** Upload a local directory tree to R2 under the given key prefix (posix). */
+/** Upload a local directory tree to R2 under the given key prefix (posix). Parallel puts. */
 export async function uploadDirectoryToR2(options: {
   config: Env;
   localDir: string;
   keyPrefix: string;
+  signal?: AbortSignal;
+  concurrency?: number;
+  onProgress?: (info: {
+    uploaded: number;
+    total: number;
+    percent: number;
+    currentKey: string;
+  }) => void;
 }): Promise<{ uploaded: number }> {
   const client = createR2Client(options.config);
   const bucket = options.config.R2_BUCKET || "shareflex-media";
   const prefix = options.keyPrefix.replace(/^\/+|\/+$/g, "");
   const files = await listFilesRecursive(options.localDir);
-  let uploaded = 0;
-
-  for (const absolute of files) {
-    const relative = path.relative(options.localDir, absolute).split(path.sep).join("/");
-    const key = prefix ? `${prefix}/${relative}` : relative;
-    const fileStat = await stat(absolute);
-    await client.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body: createReadStream(absolute),
-        ContentType: contentTypeForKey(key),
-        ContentLength: fileStat.size,
-      }),
-    );
-    uploaded += 1;
-    if (uploaded % 25 === 0) {
-      console.log(`Uploaded ${uploaded}/${files.length}…`);
-    }
+  const total = files.length;
+  if (total === 0) {
+    return { uploaded: 0 };
   }
 
+  const concurrency = Math.max(1, Math.min(options.concurrency ?? 6, 12));
+  let uploaded = 0;
+  let index = 0;
+
+  const workers = Array.from({ length: Math.min(concurrency, total) }, async () => {
+    while (true) {
+      if (options.signal?.aborted) {
+        throw new Error("Cancelled.");
+      }
+      const myIndex = index;
+      index += 1;
+      if (myIndex >= files.length) {
+        return;
+      }
+      const absolute = files[myIndex]!;
+      const relative = path.relative(options.localDir, absolute).split(path.sep).join("/");
+      const key = prefix ? `${prefix}/${relative}` : relative;
+      const fileStat = await stat(absolute);
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: createReadStream(absolute),
+          ContentType: contentTypeForKey(key),
+          ContentLength: fileStat.size,
+        }),
+      );
+      uploaded += 1;
+      options.onProgress?.({
+        uploaded,
+        total,
+        percent: Math.round((uploaded / total) * 100),
+        currentKey: key,
+      });
+      if (uploaded % 25 === 0 || uploaded === total) {
+        console.log(`Uploaded ${uploaded}/${total}…`);
+      }
+    }
+  });
+
+  await Promise.all(workers);
+  if (options.signal?.aborted) {
+    throw new Error("Cancelled.");
+  }
   return { uploaded };
 }
 

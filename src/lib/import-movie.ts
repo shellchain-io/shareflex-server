@@ -1,6 +1,5 @@
 import "dotenv/config";
 import path from "node:path";
-import { finishCloudPublish, movieRegisterPayloadFromDb } from "./cloud-publish.js";
 import { loadEnv } from "./env.js";
 import type { JobContext } from "./jobs.js";
 import { resolveMediaRoot } from "./movies.js";
@@ -30,6 +29,7 @@ export async function addMovie(options: AddMovieOptions) {
     ctx?.setProgress({
       stage: "encoding",
       detail: "Encoding HLS (1080 / 720 / 480)…",
+      progress: 0,
     });
 
     const absoluteSource = path.resolve(options.sourcePath);
@@ -40,6 +40,13 @@ export async function addMovie(options: AddMovieOptions) {
       ...(options.movieId ? { movieId: options.movieId } : {}),
       ...(options.signal ? { signal: options.signal } : {}),
       ...(ctx?.signal && !options.signal ? { signal: ctx.signal } : {}),
+      onProgress: (info) => {
+        ctx?.setProgress({
+          stage: "encoding",
+          detail: info.detail,
+          progress: info.percent,
+        });
+      },
     });
 
     let posterRelativePath = result.posterRelativePath;
@@ -126,26 +133,13 @@ export async function addMovie(options: AddMovieOptions) {
       data: { ready: true },
     });
 
-    const full = await prisma.movie.findUniqueOrThrow({
-      where: { id: readyMovie.id },
-      include: { assets: true, subtitles: true },
-    });
-
-    const publish = await finishCloudPublish({
-      config,
-      mediaRoot,
-      kind: "movies",
-      id: full.id,
-      moviePayload: movieRegisterPayloadFromDb(full),
-      ...(ctx ? { ctx } : {}),
-    });
-
     return {
       movie: readyMovie,
       masterRelativePath: result.masterRelativePath,
       ladder: result.ladder.map((rung) => rung.label),
       subtitleCount: result.subtitles.length,
-      publish,
+      needsUpload: true,
+      movieId: readyMovie.id,
     };
   } finally {
     await prisma.$disconnect();

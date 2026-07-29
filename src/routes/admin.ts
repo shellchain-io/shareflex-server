@@ -25,7 +25,7 @@ import {
 import { addEpisode, parseSeasonEpisode } from "../lib/import-episode.js";
 import { addMovie } from "../lib/import-movie.js";
 import { createId } from "../lib/ids.js";
-import { enqueueAdminJob, getJob, listJobs, cancelAdminJob } from "../lib/jobs.js";
+import { enqueueAdminJob, getJob, listJobs, cancelAdminJob, startUploadForJob } from "../lib/jobs.js";
 import { serializeMovie } from "../lib/movies.js";
 import { publishLocalPackageToR2 } from "../lib/publish-r2.js";
 import {
@@ -513,6 +513,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
     { onRequest: [app.requireOwner] },
     async (request, reply) => {
       const { jobId } = request.params as { jobId: string };
+      const jobBefore = getJob(jobId);
       const result = cancelAdminJob(jobId);
       if (!result) {
         return reply.code(404).send({
@@ -523,11 +524,160 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       if (!result.ok) {
         return reply.code(409).send({
           error: "not_cancellable",
-          message: "Only queued or running encode jobs can be cancelled.",
+          message:
+            "Only queued/running jobs (or awaiting-upload dismiss) can be cancelled.",
           job: result.job,
         });
       }
-      return { job: result.job };
+
+      // Cancel during encode → delete partial/local package. Cancel during upload keeps files.
+      if (result.ok && result.mode === "encode") {
+        const movieId = jobBefore?.result?.movieId;
+        const episodeId = jobBefore?.result?.episodeId;
+        if (typeof movieId === "string") {
+          try {
+            await deleteMovie(app.prisma, app.mediaRoot, movieId, app.config);
+          } catch {
+            const { rm } = await import("node:fs/promises");
+            await rm(path.join(app.mediaRoot, "movies", movieId), {
+              recursive: true,
+              force: true,
+            }).catch(() => undefined);
+          }
+        }
+        if (typeof episodeId === "string") {
+          try {
+            await purgeEpisodeMedia(app.prisma, app.mediaRoot, episodeId, app.config);
+            await app.prisma.episode.delete({ where: { id: episodeId } }).catch(() => undefined);
+          } catch {
+            const { rm } = await import("node:fs/promises");
+            await rm(path.join(app.mediaRoot, "episodes", episodeId), {
+              recursive: true,
+              force: true,
+            }).catch(() => undefined);
+          }
+        }
+      }
+
+      return { job: result.job, mode: result.ok ? result.mode : undefined };
+    },
+  );
+
+  app.post(
+    "/v1/admin/jobs/:jobId/upload-cdn",
+    { onRequest: [app.requireOwner] },
+    async (request, reply) => {
+      const { jobId } = request.params as { jobId: string };
+      const existing = getJob(jobId);
+      if (!existing) {
+        return reply.code(404).send({ error: "not_found", message: "Job not found." });
+      }
+      if (existing.status !== "awaiting_upload") {
+        return reply.code(409).send({
+          error: "not_ready",
+          message: "Only jobs waiting for CDN upload can start upload.",
+          job: existing,
+        });
+      }
+
+      const movieId =
+        typeof existing.result?.movieId === "string" ? existing.result.movieId : null;
+      const episodeId =
+        typeof existing.result?.episodeId === "string"
+          ? existing.result.episodeId
+          : null;
+
+      if (!movieId && !episodeId) {
+        return reply.code(400).send({
+          error: "missing_id",
+          message: "Job has no movie/episode id to upload.",
+        });
+      }
+
+      const started = startUploadForJob(jobId, async (ctx) => {
+        if (movieId) {
+          const movie = await app.prisma.movie.findUnique({
+            where: { id: movieId },
+            include: { assets: true, subtitles: true },
+          });
+          if (!movie?.ready) {
+            throw new Error("Movie encode missing or not ready.");
+          }
+          const publish = await finishCloudPublish({
+            config: app.config,
+            mediaRoot: app.mediaRoot,
+            kind: "movies",
+            id: movie.id,
+            ctx,
+            moviePayload: movieRegisterPayloadFromDb(movie),
+          });
+          return { movieId: movie.id, needsUpload: false, ...publish };
+        }
+
+        const episode = await app.prisma.episode.findUnique({
+          where: { id: episodeId! },
+          include: {
+            assets: true,
+            subtitles: true,
+            season: { include: { show: true } },
+          },
+        });
+        if (!episode?.ready) {
+          throw new Error("Episode encode missing or not ready.");
+        }
+        const extraUploads: Array<{ localDir: string; keyPrefix: string }> = [];
+        if (episode.season.posterPath) {
+          extraUploads.push({
+            localDir: path.join(
+              app.mediaRoot,
+              path.dirname(episode.season.posterPath),
+            ),
+            keyPrefix: path
+              .dirname(episode.season.posterPath)
+              .split(path.sep)
+              .join("/"),
+          });
+        }
+        if (episode.season.show.posterPath) {
+          extraUploads.push({
+            localDir: path.join(
+              app.mediaRoot,
+              path.dirname(episode.season.show.posterPath),
+            ),
+            keyPrefix: path
+              .dirname(episode.season.show.posterPath)
+              .split(path.sep)
+              .join("/"),
+          });
+        }
+        const publish = await finishCloudPublish({
+          config: app.config,
+          mediaRoot: app.mediaRoot,
+          kind: "episodes",
+          id: episode.id,
+          ctx,
+          episodePayload: episodeRegisterPayloadFromDb(episode),
+          extraUploads,
+        });
+        return {
+          episodeId: episode.id,
+          showId: episode.season.show.id,
+          needsUpload: false,
+          ...publish,
+        };
+      });
+
+      if (!started) {
+        return reply.code(404).send({ error: "not_found", message: "Job not found." });
+      }
+      if (!started.ok) {
+        return reply.code(409).send({
+          error: "not_ready",
+          message: started.reason,
+          job: started.job,
+        });
+      }
+      return reply.code(202).send({ job: started.job });
     },
   );
 
@@ -771,7 +921,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
               title: result.movie.title,
               ready: result.movie.ready,
               ladder: result.ladder,
-              ...(result.publish ?? {}),
+              needsUpload: true,
             };
           } finally {
             await unlink(savedPath).catch(() => undefined);
@@ -1015,7 +1165,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
               episodeNumber: result.episode.episodeNumber,
               ready: result.episode.ready,
               ladder: result.ladder,
-              ...(result.publish ?? {}),
+              needsUpload: true,
             };
           } finally {
             await unlink(savedPath).catch(() => undefined);
@@ -1061,8 +1211,15 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             kind: "movies",
             id: movie.id,
             signal: ctx.signal,
+            onProgress: (info) => {
+              ctx.setProgress({
+                stage: "uploading_cdn",
+                detail: `CDN ${info.uploaded}/${info.total} files`,
+                progress: info.percent,
+              });
+            },
           });
-          return { movieId: movie.id, r2Uploaded: true, ...result };
+          return { movieId: movie.id, r2Uploaded: true, needsUpload: false, ...result };
         },
       });
 
@@ -1147,8 +1304,15 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
             kind: "episodes",
             id: episode.id,
             signal: ctx.signal,
+            onProgress: (info) => {
+              ctx.setProgress({
+                stage: "uploading_cdn",
+                detail: `CDN ${info.uploaded}/${info.total} files`,
+                progress: info.percent,
+              });
+            },
           });
-          return { episodeId: episode.id, r2Uploaded: true, ...result };
+          return { episodeId: episode.id, r2Uploaded: true, needsUpload: false, ...result };
         },
       });
 

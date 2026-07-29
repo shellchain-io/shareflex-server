@@ -152,6 +152,7 @@ export async function finishCloudPublish(options: {
   ctx?.setProgress({
     stage: "uploading_cdn",
     detail: `Uploading ${kind}/${id} to R2…`,
+    progress: 0,
     result: { ...result },
   });
 
@@ -162,6 +163,13 @@ export async function finishCloudPublish(options: {
       kind,
       id,
       ...(ctx?.signal ? { signal: ctx.signal } : {}),
+      onProgress: (info) => {
+        ctx?.setProgress({
+          stage: "uploading_cdn",
+          detail: `CDN ${info.uploaded}/${info.total} files`,
+          progress: info.percent,
+        });
+      },
     });
     result.uploaded = uploaded.uploaded;
     result.keyPrefix = uploaded.keyPrefix;
@@ -174,12 +182,14 @@ export async function finishCloudPublish(options: {
         config,
         localDir: extra.localDir,
         keyPrefix: extra.keyPrefix,
+        ...(ctx?.signal ? { signal: ctx.signal } : {}),
       });
     }
 
     result.r2Uploaded = true;
     ctx?.setProgress({
       detail: `CDN upload done (${uploaded.uploaded} files)`,
+      progress: 100,
       result: { ...result },
     });
   } catch (error) {

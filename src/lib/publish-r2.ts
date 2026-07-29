@@ -20,6 +20,12 @@ export async function publishLocalPackageToR2(options: {
   kind: PublishKind;
   id: string;
   signal?: AbortSignal;
+  onProgress?: (info: {
+    uploaded: number;
+    total: number;
+    percent: number;
+    currentKey: string;
+  }) => void;
 }): Promise<{ uploaded: number; keyPrefix: string }> {
   await assertR2Configured(options.config);
   if (options.signal?.aborted) {
@@ -49,6 +55,8 @@ export async function publishLocalPackageToR2(options: {
     config: options.config,
     localDir,
     keyPrefix,
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });
 
   if (options.signal?.aborted) {

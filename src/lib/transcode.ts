@@ -329,9 +329,16 @@ export async function transcodeMovie(options: {
   kind?: MediaKind;
   id?: string;
   signal?: AbortSignal;
+  onProgress?: (info: {
+    phase: string;
+    percent: number;
+    detail: string;
+  }) => void;
 }): Promise<TranscodeResult> {
   const kind = options.kind ?? "movies";
   const signal = options.signal;
+  const report = options.onProgress;
+  report?.({ phase: "probe", percent: 2, detail: "Probing source…" });
   const source = await probeSource(options.sourcePath, signal);
   const ladder = selectLadder(source.height);
   const videoEncoder = await resolveVideoEncoder();
@@ -365,35 +372,22 @@ export async function transcodeMovie(options: {
 
     console.log(`ShareFlex encode via ${videoEncoder} (${ladder.map((r) => r.label).join(", ")})`);
 
-    for (const rung of ladder) {
-      if (signal?.aborted) {
-        throw new Error("Cancelled.");
-      }
-      const variantDir = path.join(stagingDir, rung.label);
-      await mkdir(variantDir, { recursive: true });
-      let usedEncoder = videoEncoder;
-      try {
-        const args = buildVariantArgs(
-          source.sourcePath,
-          variantDir,
-          rung,
-          source.hasAudio,
-          source.frameRate,
-          usedEncoder,
-        );
-        console.log(`Encoding ${rung.label} with ${usedEncoder}...`);
-        await runCommand("ffmpeg", args, signal ? { signal } : {});
-      } catch (error) {
-        if (signal?.aborted || (error instanceof Error && error.message === "Cancelled.")) {
-          throw error instanceof Error ? error : new Error("Cancelled.");
+    try {
+      for (let i = 0; i < ladder.length; i++) {
+        const rung = ladder[i]!;
+        if (signal?.aborted) {
+          throw new Error("Cancelled.");
         }
-        if (usedEncoder !== "libx264") {
-          console.warn(
-            `Hardware encode failed for ${rung.label}, falling back to libx264:`,
-            error instanceof Error ? error.message : error,
-          );
-          usedEncoder = "libx264";
-          cachedVideoEncoder = "libx264";
+        const rungPercent = Math.round(((i + 0.5) / (ladder.length + 1)) * 90);
+        report?.({
+          phase: "encode",
+          percent: rungPercent,
+          detail: `Encoding ${rung.label} (${i + 1}/${ladder.length})…`,
+        });
+        const variantDir = path.join(stagingDir, rung.label);
+        await mkdir(variantDir, { recursive: true });
+        let usedEncoder = videoEncoder;
+        try {
           const args = buildVariantArgs(
             source.sourcePath,
             variantDir,
@@ -404,71 +398,105 @@ export async function transcodeMovie(options: {
           );
           console.log(`Encoding ${rung.label} with ${usedEncoder}...`);
           await runCommand("ffmpeg", args, signal ? { signal } : {});
-        } else {
-          throw error;
+        } catch (error) {
+          if (signal?.aborted || (error instanceof Error && error.message === "Cancelled.")) {
+            throw error instanceof Error ? error : new Error("Cancelled.");
+          }
+          if (usedEncoder !== "libx264") {
+            console.warn(
+              `Hardware encode failed for ${rung.label}, falling back to libx264:`,
+              error instanceof Error ? error.message : error,
+            );
+            usedEncoder = "libx264";
+            cachedVideoEncoder = "libx264";
+            const args = buildVariantArgs(
+              source.sourcePath,
+              variantDir,
+              rung,
+              source.hasAudio,
+              source.frameRate,
+              usedEncoder,
+            );
+            console.log(`Encoding ${rung.label} with ${usedEncoder}...`);
+            await runCommand("ffmpeg", args, signal ? { signal } : {});
+          } else {
+            throw error;
+          }
+        }
+        variants.push({
+          rung,
+          playlistRelative: `${rung.label}/index.m3u8`,
+          hasAudio: source.hasAudio,
+        });
+        report?.({
+          phase: "encode",
+          percent: Math.round(((i + 1) / (ladder.length + 1)) * 90),
+          detail: `Finished ${rung.label} (${i + 1}/${ladder.length})`,
+        });
+      }
+
+      const masterPath = path.join(stagingDir, "master.m3u8");
+      await writeMasterPlaylist(masterPath, variants);
+
+      let posterRelativePath: string | null = null;
+      const posterAbsolute = path.join(stagingDir, "poster.jpg");
+      report?.({ phase: "poster", percent: 92, detail: "Extracting poster…" });
+      try {
+        await extractPoster(source.sourcePath, posterAbsolute, source.durationSeconds, signal);
+        posterRelativePath = path.join(kind, id, "poster.jpg");
+      } catch (error) {
+        if (signal?.aborted || (error instanceof Error && error.message === "Cancelled.")) {
+          throw error instanceof Error ? error : new Error("Cancelled.");
+        }
+        posterRelativePath = null;
+      }
+
+      report?.({ phase: "subtitles", percent: 95, detail: "Extracting subtitles…" });
+      const subtitleFiles = await extractSubtitles(source, stagingDir, signal);
+
+      const masterText = await readFile(masterPath, "utf8");
+      if (!masterText.includes("#EXTM3U")) {
+        throw new Error("Master playlist validation failed.");
+      }
+      for (const variant of variants) {
+        const playlistPath = path.join(stagingDir, variant.playlistRelative);
+        const playlist = await readFile(playlistPath, "utf8");
+        if (!playlist.includes("#EXTINF")) {
+          throw new Error(`Variant playlist invalid: ${variant.playlistRelative}`);
         }
       }
-      variants.push({
-        rung,
-        playlistRelative: `${rung.label}/index.m3u8`,
-        hasAudio: source.hasAudio,
-      });
-    }
 
-    const masterPath = path.join(stagingDir, "master.m3u8");
-    await writeMasterPlaylist(masterPath, variants);
+      if (signal?.aborted) {
+        throw new Error("Cancelled.");
+      }
 
-    let posterRelativePath: string | null = null;
-    const posterAbsolute = path.join(stagingDir, "poster.jpg");
-    try {
-      await extractPoster(source.sourcePath, posterAbsolute, source.durationSeconds, signal);
-      posterRelativePath = path.join(kind, id, "poster.jpg");
+      await rm(finalDir, { recursive: true, force: true });
+      await mkdir(path.dirname(finalDir), { recursive: true });
+      await rename(stagingDir, finalDir);
+
+      report?.({ phase: "done", percent: 100, detail: "Encode complete" });
+
+      return {
+        id,
+        movieId: id,
+        title,
+        durationSeconds: Math.round(source.durationSeconds),
+        outputDir: finalDir,
+        masterRelativePath: path.join(kind, id, "master.m3u8"),
+        posterRelativePath,
+        subtitles: subtitleFiles.map((track) => ({
+          ...track,
+          relativePath: path.join(kind, id, track.relativePath),
+        })),
+        ladder,
+        kind,
+      };
     } catch (error) {
-      if (signal?.aborted || (error instanceof Error && error.message === "Cancelled.")) {
-        throw error instanceof Error ? error : new Error("Cancelled.");
+      await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
+      if (signal?.aborted) {
+        await rm(finalDir, { recursive: true, force: true }).catch(() => undefined);
       }
-      posterRelativePath = null;
+      throw error;
     }
-
-    const subtitleFiles = await extractSubtitles(source, stagingDir, signal);
-
-    // Validate master exists and at least one variant playlist exists.
-    const masterText = await readFile(masterPath, "utf8");
-    if (!masterText.includes("#EXTM3U")) {
-      throw new Error("Master playlist validation failed.");
-    }
-    for (const variant of variants) {
-      const playlistPath = path.join(stagingDir, variant.playlistRelative);
-      const playlist = await readFile(playlistPath, "utf8");
-      if (!playlist.includes("#EXTINF")) {
-        throw new Error(`Variant playlist invalid: ${variant.playlistRelative}`);
-      }
-    }
-
-    if (signal?.aborted) {
-      throw new Error("Cancelled.");
-    }
-
-    await rm(finalDir, { recursive: true, force: true });
-    await mkdir(path.dirname(finalDir), { recursive: true });
-    await rename(stagingDir, finalDir);
-
-    // Skip archiving the original upload — it doubles disk I/O for no playback benefit.
-
-    return {
-      id,
-      movieId: id,
-      title,
-      durationSeconds: Math.round(source.durationSeconds),
-      outputDir: finalDir,
-      masterRelativePath: path.join(kind, id, "master.m3u8"),
-      posterRelativePath,
-      subtitles: subtitleFiles.map((track) => ({
-        ...track,
-        relativePath: path.join(kind, id, track.relativePath),
-      })),
-      ladder,
-      kind,
-    };
   });
 }
