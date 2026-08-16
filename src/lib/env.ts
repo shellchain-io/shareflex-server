@@ -6,7 +6,8 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(8787),
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
-    .default("info"),
+    // warn = startup + real problems only (safe for tiny GCE disks).
+    .default("warn"),
   JWT_SECRET: z.string().min(32),
   ACCESS_TOKEN_TTL: z.string().default("15m"),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),

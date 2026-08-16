@@ -1641,10 +1641,19 @@
       async function cancelEncodeJob(id) {
         const job = serverJobs.find((j) => j.id === id);
         const label = job?.label || job?.title || "this job";
-        const awaitingCdn = job?.stage === "awaiting_cdn" || job?.status === "succeeded";
+        const awaitingCdn =
+          job?.status === "awaiting_upload" || job?.stage === "awaiting_cdn";
+        const uploadingCdn =
+          job?.status === "running" &&
+          (job?.stage === "uploading_cdn" ||
+            job?.stage === "registering_cloud" ||
+            job?.kind === "publish" ||
+            job?.lane === "publish");
         const msg = awaitingCdn
           ? `Dismiss “${label}” from the jobs list? Local encode is kept — you can upload to CDN later from the library.`
-          : `Cancel “${label}”? If still encoding, progress stops and partial encode files are removed.`;
+          : uploadingCdn
+            ? `Stop CDN upload for “${label}”? Local encode is kept. Press Upload CDN again to retry from the start.`
+            : `Cancel “${label}”? If still encoding, progress stops and partial encode files are removed.`;
         if (!confirm(msg)) return;
         try {
           await api(`/v1/admin/jobs/${encodeURIComponent(id)}/cancel`, {
@@ -1912,10 +1921,14 @@
         return max;
       }
 
-      function populateReplaceEpisodes() {
+      function populateReplaceEpisodes(preferredEpisode) {
         const select = $("replaceEpisodeSelect");
         const season = selectedSeasonRecord();
         const episodes = season?.episodes || [];
+        const previous =
+          preferredEpisode !== undefined && preferredEpisode !== null && preferredEpisode !== ""
+            ? String(preferredEpisode)
+            : select.value;
         select.innerHTML =
           `<option value="">Select episode…</option>` +
           episodes
@@ -1924,6 +1937,12 @@
                 `<option value="${ep.episodeNumber}">E${String(ep.episodeNumber).padStart(2, "0")} · ${escapeHtml(ep.title)}</option>`,
             )
             .join("");
+        if (
+          previous &&
+          [...select.options].some((opt) => opt.value === previous)
+        ) {
+          select.value = previous;
+        }
       }
 
       function syncEpisodeModeUi() {
@@ -2095,6 +2114,8 @@
         let showYear = "";
         const previousShowId = $("showSelect").value;
         const previousSeasonValue = $("seasonSelect").value;
+        const previousEpisodeMode = $("episodeMode").value;
+        const previousReplaceEpisode = $("replaceEpisodeSelect").value;
         const creatingNewSeasonIntent =
           showMode === "new" || previousSeasonValue === "__new__";
         const seasonNumber = selectedSeasonNumber();
@@ -2108,6 +2129,13 @@
           if (previousShowId && showCatalog.some((s) => s.id === previousShowId)) {
             $("showSelect").value = previousShowId;
             populateSeasons(previousSeasonValue);
+          }
+          if (showMode === "existing") {
+            $("episodeMode").value = previousEpisodeMode || "append";
+            syncEpisodeModeUi();
+            if (previousEpisodeMode === "replace") {
+              populateReplaceEpisodes(previousReplaceEpisode);
+            }
           }
         } catch (error) {
           $("episodeMsg").textContent =
@@ -2131,6 +2159,11 @@
           }
           $("showSelect").value = showId;
           populateSeasons(previousSeasonValue);
+          if (previousEpisodeMode === "replace") {
+            $("episodeMode").value = "replace";
+            syncEpisodeModeUi();
+            populateReplaceEpisodes(previousReplaceEpisode);
+          }
           if (!Number.isInteger(seasonNumber) || seasonNumber < 0) {
             $("episodeMsg").textContent = "Pick a season or enter a new season number.";
             $("episodeMsg").className = "msg error";
@@ -2158,7 +2191,10 @@
                 .find((s) => s.id === showId)
                 ?.seasons.find((s) => s.seasonNumber === seasonNumber) || null
             : null;
-        const replaceEpisode = Number($("replaceEpisodeSelect").value);
+        // Prefer the pre-refresh pick — dropdown rebuild used to wipe the value.
+        const replaceEpisode = Number(
+          previousReplaceEpisode || $("replaceEpisodeSelect").value,
+        );
 
         if (mode === "replace") {
           if (!Number.isInteger(replaceEpisode) || replaceEpisode < 1) {

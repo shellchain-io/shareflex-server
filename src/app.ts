@@ -46,15 +46,17 @@ export async function buildApp(config: Env) {
 
   const app = Fastify({
     logger: {
+      // GCE: use LOG_LEVEL=warn so routine traffic never fills the disk.
       level: config.LOG_LEVEL,
     },
+    // Never auto-log every request (health/progress spam filled journald → SSH died).
+    disableRequestLogging: true,
     bodyLimit: 2 * 1024 * 1024,
     trustProxy: false,
   }).withTypeProvider<ZodTypeProvider>();
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
-
   const mediaRoot = resolveMediaRoot(config.MEDIA_ROOT);
 
   await app.register(cors, {

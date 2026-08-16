@@ -319,15 +319,34 @@ async function runJobItem(item: QueueItem, abort: AbortController): Promise<void
     signal: abort.signal,
     jobId: item.id,
     setProgress: (patch) => {
+      const current = jobs.get(item.id);
+      // Ignore late progress callbacks after cancel/success so the UI does not
+      // show "CDN 212/1805" on top of an awaiting_upload / succeeded job.
+      if (!current || current.status !== "running") {
+        return;
+      }
       updateJob(item.id, patch);
     },
   };
 
   try {
     const result = await item.run(ctx);
+
+    // If the runner finished successfully, keep that outcome even if Cancel was
+    // pressed in the last moment (abort after resolve used to rewind CDN to
+    // "Ready — upload CDN").
     if (abort.signal.aborted) {
-      applyAbortOutcome(job, item.lane, result);
-      return;
+      const publishFinished =
+        item.lane === "publish" &&
+        result?.r2Uploaded === true &&
+        result?.failedStage == null;
+      const encodeFinished =
+        item.lane === "encode" &&
+        (result?.needsUpload === true || result?.episodeId != null || result?.movieId != null);
+      if (!publishFinished && !encodeFinished) {
+        applyAbortOutcome(job, item.lane, result);
+        return;
+      }
     }
 
     const needsUpload = Boolean(result.needsUpload);
@@ -342,6 +361,12 @@ async function runJobItem(item: QueueItem, abort: AbortController): Promise<void
     } else {
       job.status = "succeeded";
       job.stage = "done";
+      job.detail =
+        item.lane === "publish"
+          ? result?.cloudRegistered
+            ? "CDN uploaded + cloud registered"
+            : "CDN uploaded"
+          : job.detail;
     }
   } catch (error) {
     if (abort.signal.aborted) {

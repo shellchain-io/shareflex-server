@@ -1428,7 +1428,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(400).send({
           error: "no_publish_target",
           message:
-            "Set PUBLISH_TARGET_URL in Mac .env to your GCE API (e.g. http://34.47.238.195:8787).",
+            "Set PUBLISH_TARGET_URL in Mac .env to your GCE API (e.g. http://34.47.191.103:8787).",
         });
       }
       const { id } = request.params as { id: string };
@@ -1523,7 +1523,7 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(400).send({
           error: "no_publish_target",
           message:
-            "Set PUBLISH_TARGET_URL in Mac .env to your GCE API (e.g. http://34.47.238.195:8787).",
+            "Set PUBLISH_TARGET_URL in Mac .env to your GCE API (e.g. http://34.47.191.103:8787).",
         });
       }
       const { id } = request.params as { id: string };
