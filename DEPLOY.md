@@ -35,13 +35,15 @@ sudo systemctl restart systemd-journald
 # 5) Deploy latest server-cloud (no per-request logs), then restart
 git pull
 npm install
+npx prisma generate
+npx prisma migrate deploy
 npm run build
 sudo systemctl restart shareflex
 sudo systemctl status shareflex --no-pager
 curl -sS http://127.0.0.1:8787/health
 ```
 
-If `git pull` isn’t set up yet, copy the new `server-cloud` build onto the VM however you usually deploy, then still do steps 1–4 and `npm run build` + `systemctl restart`.
+If `npm run build` errors about `cdnUploaded` / `cloudRegistered`, you skipped `npx prisma generate` — run that, then build again.
 
 **Check it’s quiet:** `sudo journalctl -u shareflex -n 20 --no-pager` should show almost nothing during phone use (no `/health` spam).
 
